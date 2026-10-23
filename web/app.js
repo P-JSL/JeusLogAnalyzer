@@ -28,7 +28,8 @@ function showSummary(m){$('results').classList.remove('hidden');$('fileName').te
  $('sqlCount').textContent=fmt(m.stats.sql);$('otherErrorCount').textContent=fmt(m.stats.otherError);$('sqlTopList').replaceChildren();for(const p of (m.sqlTop||[])){const item=document.createElement('span');item.className='sql-chip';item.textContent=`${p.name} · ${fmt(p.count)}`;$('sqlTopList').append(item);}
  $('sqlTypeList').replaceChildren();for(const t of (m.sqlTypes||[])){const item=document.createElement('span');item.className='sql-chip';item.textContent=`${t.name}: ${fmt(t.count)}건`;$('sqlTypeList').append(item);}
  renderHotspots(m);
- const chart=$('hourlyChart');chart.replaceChildren();const series=(m.hourly||[]),peak=Math.max(1,...series.map(x=>x.count));for(const t of series.slice(-48)){const block=document.createElement('div');block.className='hour-item';block.title=`${t.name} · ${fmt(t.count)}건`;const bar=document.createElement('span');bar.className='hour-bar';bar.style.height=Math.max(2,Math.round(100*t.count/peak))+'%';const x=document.createElement('small');x.textContent=t.name.slice(-5);block.append(bar,x);chart.append(block);}if(series.length>48){const info=document.createElement('small');info.textContent='최근 48개 시간 구간 표시';chart.append(info);} }
+ renderErrorSurges(m);
+ const chart=$('hourlyChart');chart.replaceChildren();const series=(m.hourly||[]),peak=Math.max(1,...series.map(x=>x.count));for(const t of series.slice(-24)){const block=document.createElement('div');block.className='hour-item';block.title=`${t.name} · ${fmt(t.count)}건`;const bar=document.createElement('span');bar.className='hour-bar';bar.style.height=Math.max(2,Math.round(100*t.count/peak))+'%';const x=document.createElement('small');x.textContent=t.name.slice(-5);block.append(bar,x);chart.append(block);}if(series.length>24){const info=document.createElement('small');info.textContent='최근 24개 기록 시간 구간 표시 · 전체 집계는 유지';chart.append(info);} }
 // Splunk-inspired 5-minute aggregation without retaining message bodies.
 // Buttons open the real source event through the existing immutable offset index.
 function renderHotspots(m){
@@ -44,6 +45,30 @@ function renderHotspots(m){
   const actions=document.createElement('div');actions.className='hotspot-actions';
   for(const [text,index] of [['첫 오류',h.firstErrorEvent],['마지막 오류',h.lastErrorEvent]]){
    const button=document.createElement('button');button.type='button';button.className='btn secondary small';button.textContent=text;
+   button.disabled=!Number.isSafeInteger(index)||index<0;
+   button.addEventListener('click',()=>void showIndexedEvent(index));actions.append(button);
+  }
+  row.append(stat,actions);box.append(row);
+ }
+}
+// Splunk-style window comparison; decisions are precomputed by the local Go
+// indexer. Only counts and immutable source-event pointers reach this panel.
+function renderErrorSurges(m){
+ const box=$('errorSurgeList');box.replaceChildren();$('surgeLimit').classList.toggle('hidden',!m.hotspotLimited);
+ const items=m.errorSurges||[];
+ if(!items.length){const empty=document.createElement('p');empty.className='data-empty';empty.textContent='급증 후보가 없습니다. 기준 시간대·건수가 부족할 때도 표시되지 않습니다.';box.append(empty);return;}
+ for(const x of items){
+  const row=document.createElement('div');row.className='surge-row';
+  const stat=document.createElement('div');stat.className='surge-stat';
+  const time=document.createElement('strong');time.textContent=x.start;
+  const percentage=n=>(100*n).toFixed(1)+'%';
+  const recent=x.all>0?x.errors/x.all:0;
+  const prior=x.baselineAll>0?x.baselineErrors/x.baselineAll:0;
+  const detail=document.createElement('span');detail.textContent=`현재 오류율 ${percentage(recent)} (${fmt(x.errors)}/${fmt(x.all)}) · 이전 60분 ${percentage(prior)} (${fmt(x.baselineErrors)}/${fmt(x.baselineAll)})`;
+  stat.append(time,detail);
+  const actions=document.createElement('div');actions.className='hotspot-actions';
+  for(const [caption,index] of [['첫 오류',x.firstErrorEvent],['마지막 오류',x.lastErrorEvent]]){
+   const button=document.createElement('button');button.className='btn secondary small';button.type='button';button.textContent=caption;
    button.disabled=!Number.isSafeInteger(index)||index<0;
    button.addEventListener('click',()=>void showIndexedEvent(index));actions.append(button);
   }
@@ -201,6 +226,9 @@ function diagnosticSummary(m){
   '',
   '유사 오류 그룹 (구조 기반, 첫/마지막 이벤트 번호)',
   ...(m.issues||[]).slice(0,30).map(x=>`${x.name} [${x.id}]: ${fmt(x.count)}건 / ${fmt(x.firstEvent+1)} ~ ${fmt(x.lastEvent+1)}`),
+  '',
+  '오류율 급증 후보 (이전 60분 기준, 서비스 장애/원인 판정 아님)',
+  ...(m.errorSurges||[]).map(x=>`${x.start}: ${fmt(x.errors)}/${fmt(x.all)}건 / 이전 60분 ${fmt(x.baselineErrors)}/${fmt(x.baselineAll)}건 · 첫 오류 #${fmt(x.firstErrorEvent+1)} / 마지막 #${fmt(x.lastErrorEvent+1)}`),
   '',
   '5분 단위 오류 집중 구간 (건수 기준, 이상 탐지 모델 아님)',
   ...(m.hotspots||[]).map(x=>`${x.start}: 오류 ${fmt(x.errors)}건 / SQL 오류 ${fmt(x.sqlErrors)}건 / 전체 ${fmt(x.all)}건 · 첫 오류 #${fmt(x.firstErrorEvent+1)} / 마지막 #${fmt(x.lastErrorEvent+1)}`),

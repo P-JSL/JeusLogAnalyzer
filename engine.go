@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -285,6 +286,108 @@ type Hotspot struct {
 	LastErrorEvent  int64  `json:"lastErrorEvent"`
 }
 
+// ErrorSurge is a conservative triage candidate based on the prior 60 minutes
+// of this one log file. A surge is not a service SLO breach or an ML anomaly.
+// Only bounded counts and source positions are persisted, never log bodies.
+type ErrorSurge struct {
+	Start           string `json:"start"`
+	Errors          int64  `json:"errors"`
+	All             int64  `json:"all"`
+	BaselineErrors  int64  `json:"baselineErrors"`
+	BaselineAll     int64  `json:"baselineAll"`
+	FirstErrorEvent int64  `json:"firstErrorEvent"`
+	LastErrorEvent  int64  `json:"lastErrorEvent"`
+}
+
+// wilsonInterval estimates a binomial proportion range with z=1.96.
+// It is deliberately a screening heuristic, not a multiple-testing-adjusted
+// statistical change-point test. Inputs are event counts, not independent
+// user-request outcomes; the intervals only reduce noisy candidates.
+func wilsonInterval(successes, total int64) (float64, float64) {
+	if total <= 0 {
+		return 0, 1
+	}
+	const z = 1.96
+	n := float64(total)
+	p := float64(successes) / n
+	scale := 1 + z*z/n
+	center := (p + z*z/(2*n)) / scale
+	spread := z * math.Sqrt((p*(1-p)+z*z/(4*n))/n) / scale
+	return math.Max(0, center-spread), math.Min(1, center+spread)
+}
+
+// findErrorSurges compares each five-minute bin to the preceding twelve bins
+// (60 min). Require enough observed intervals, baseline volume and a large
+// rate shift; missing time bins and low-volume logs never imply a spike.
+// Complexity: O(K log K + 12*K), K <= 50,000. Maximum eight saved candidates.
+func findErrorSurges(buckets map[string]*Hotspot) []ErrorSurge {
+	ordered := make([]string, 0, len(buckets))
+	for start := range buckets {
+		ordered = append(ordered, start)
+	}
+	sort.Strings(ordered)
+	found := make([]ErrorSurge, 0)
+	for _, key := range ordered {
+		now := buckets[key]
+		if now.All < 20 || now.Errors < 5 || now.FirstErrorEvent < 0 {
+			continue
+		}
+		stamp, err := time.Parse("2006-01-02 15:04", key)
+		if err != nil {
+			continue
+		}
+		// An intermittent log cannot safely treat an hour-old baseline as
+		// directly preceding this bucket. The last five-minute interval must
+		// contain observations before considering any surge candidate.
+		immediate := stamp.Add(-5 * time.Minute).Format("2006-01-02 15:04")
+		if preceding := buckets[immediate]; preceding == nil || preceding.All == 0 {
+			continue
+		}
+		var baselineErrors, baselineAll int64
+		observed := 0
+		for prior := 1; prior <= 12; prior++ {
+			previous := stamp.Add(-time.Duration(prior*5) * time.Minute).Format("2006-01-02 15:04")
+			if b, exists := buckets[previous]; exists && b.All > 0 {
+				observed++
+				baselineErrors += b.Errors
+				baselineAll += b.All
+			}
+		}
+		if observed < 6 || baselineAll < 120 {
+			continue
+		}
+		rate := float64(now.Errors) / float64(now.All)
+		historical := float64(baselineErrors) / float64(baselineAll)
+		if rate < historical+0.05 || (baselineErrors > 0 && rate < 2*historical) {
+			continue
+		}
+		currentLow, _ := wilsonInterval(now.Errors, now.All)
+		_, baselineHigh := wilsonInterval(baselineErrors, baselineAll)
+		if currentLow <= baselineHigh {
+			continue
+		}
+		found = append(found, ErrorSurge{Start: key, Errors: now.Errors, All: now.All,
+			BaselineErrors: baselineErrors, BaselineAll: baselineAll,
+			FirstErrorEvent: now.FirstErrorEvent, LastErrorEvent: now.LastErrorEvent})
+	}
+	sort.Slice(found, func(i, j int) bool {
+		a, b := found[i], found[j]
+		differenceA := float64(a.Errors)/float64(a.All) - float64(a.BaselineErrors)/float64(a.BaselineAll)
+		differenceB := float64(b.Errors)/float64(b.All) - float64(b.BaselineErrors)/float64(b.BaselineAll)
+		if differenceA != differenceB {
+			return differenceA > differenceB
+		}
+		if a.Errors != b.Errors {
+			return a.Errors > b.Errors
+		}
+		return a.Start < b.Start
+	})
+	if len(found) > 8 {
+		return found[:8]
+	}
+	return found
+}
+
 // fiveMinuteBucket treats the header's time as an unzoned wall-clock value.
 // It never guesses a server timezone, and invalid timestamps are ignored.
 func fiveMinuteBucket(stamp string) string {
@@ -303,25 +406,26 @@ func fiveMinuteBucket(stamp string) string {
 }
 
 type Summary struct {
-	SourceHash     string    `json:"sourceHash"`
-	StorageMode    string    `json:"storageMode"`
-	MetadataBytes  int64     `json:"metadataBytes"`
-	ID             string    `json:"id"`
-	Name           string    `json:"name"`
-	Size           int64     `json:"size"`
-	Encoding       string    `json:"encoding"`
-	Imported       string    `json:"imported"`
-	Counts         Counts    `json:"stats"`
-	Lines          int64     `json:"lines"`
-	Top            []Pair    `json:"top"`
-	SQLTop         []Pair    `json:"sqlTop"`
-	Hourly         []Pair    `json:"hourly"`
-	SQLTypes       []Pair    `json:"sqlTypes"`
-	Indexed        bool      `json:"indexed"`
-	IssueVersion   int       `json:"issueVersion,omitempty"`
-	Issues         []Issue   `json:"issues,omitempty"`
-	Hotspots       []Hotspot `json:"hotspots,omitempty"`
-	HotspotLimited bool      `json:"hotspotLimited,omitempty"`
+	SourceHash     string       `json:"sourceHash"`
+	StorageMode    string       `json:"storageMode"`
+	MetadataBytes  int64        `json:"metadataBytes"`
+	ID             string       `json:"id"`
+	Name           string       `json:"name"`
+	Size           int64        `json:"size"`
+	Encoding       string       `json:"encoding"`
+	Imported       string       `json:"imported"`
+	Counts         Counts       `json:"stats"`
+	Lines          int64        `json:"lines"`
+	Top            []Pair       `json:"top"`
+	SQLTop         []Pair       `json:"sqlTop"`
+	Hourly         []Pair       `json:"hourly"`
+	SQLTypes       []Pair       `json:"sqlTypes"`
+	Indexed        bool         `json:"indexed"`
+	IssueVersion   int          `json:"issueVersion,omitempty"`
+	Issues         []Issue      `json:"issues,omitempty"`
+	Hotspots       []Hotspot    `json:"hotspots,omitempty"`
+	HotspotLimited bool         `json:"hotspotLimited,omitempty"`
+	ErrorSurges    []ErrorSurge `json:"errorSurges,omitempty"`
 }
 type indexState struct {
 	offset    uint64
@@ -808,6 +912,7 @@ func buildIndexStreamContext(ctx context.Context, source io.Reader, dir, enc str
 		h = append(h, Pair{k, v})
 	}
 	sort.Slice(h, func(i, j int) bool { return h[i].Name < h[j].Name })
+	surges := findErrorSurges(hotspots)
 	// Rank only intervals containing errors. A high count is a triage signal,
 	// not statistical evidence of a change point or a causal relationship.
 	groups := make([]Hotspot, 0, len(hotspots))
@@ -828,5 +933,5 @@ func buildIndexStreamContext(ctx context.Context, source io.Reader, dir, enc str
 	if len(groups) > 12 {
 		groups = groups[:12]
 	}
-	return Summary{Counts: counts, Lines: int64(lineNo), Top: sorted(top, 8), SQLTop: sorted(sqlTop, 8), Hourly: h, SQLTypes: sorted(sqlTypes, 10), Encoding: enc, Indexed: true, IssueVersion: 1, Issues: issueList, Hotspots: groups, HotspotLimited: hotspotsLimited}, nil
+	return Summary{Counts: counts, Lines: int64(lineNo), Top: sorted(top, 8), SQLTop: sorted(sqlTop, 8), Hourly: h, SQLTypes: sorted(sqlTypes, 10), Encoding: enc, Indexed: true, IssueVersion: 1, Issues: issueList, Hotspots: groups, HotspotLimited: hotspotsLimited, ErrorSurges: surges}, nil
 }

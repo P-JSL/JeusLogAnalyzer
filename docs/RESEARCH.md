@@ -86,3 +86,23 @@
 - 로그 헤더 시각을 신뢰할 수 없는 경우 구간을 만들지 않습니다. 오류 건수 순으로 상위 12개만 저장하며 유효 시간대가 부족하더라도 임의로 보충하지 않습니다.
 - 기존 32 bytes/이벤트 인덱스에 추가 바이트가 없으며, 요약 JSON만 고정 상한의 소규모 항목이 추가됩니다. 원본 저장·로그 메시지 전수 인덱싱·외부 호출·ML은 없습니다.
 - SQL 오류 수량은 명시적인 `ERROR/SEVERE` 등 **오류 레벨이면서 SQL 패턴인 이벤트**만 집계합니다. INFO 레벨 내 SQL 패턴은 SQL 오류로 올리지 않습니다.
+
+
+## v6.3.0 — 24시간 내 단일 파일 중심 오류율 급증 후보
+
+**실제 운영 맥락:** 사용자가 직접 검사하는 JEUS 로그는 일반적으로 최대 24시간치. 따라서 7/30일 평균·동일 요일 기준선·자동 트레이스 연관·학습형 이상 감지는 데이터가 부족해 적용하지 않음. 시간대별 5분 집계와 직전 60분의 오류 이벤트 비율만 비교.
+
+| 후보 | 공식 문서/원리 | 결정 |
+|---|---|---|
+| Splunk `timechart` / `streamstats` | 짧은 시간 구간 집계와 시간 흐름 비교 | **부분 적용:** 자체 5분 bucket·과거 60분 비율 및 첫/마지막 오류 원본 이동 (SPL 엔진 사용 안 함) |
+| Datadog Error Tracking | 구조적 오류 그룹과 첫/마지막 발생·최근 급증에 따른 우선순위 | **기존 유사 오류 그룹 유지, 급증 조사 후보 추가:** 원문/트레이스·사용자 영향 추론은 하지 않음 |
+| Elastic Logs Anomalies | ML 로그량 변화 및 학습 결과 기반 후보 | **미적용:** 학습 기준선 부족, 단일 파일에 과도한 복잡도·오탐 우려 |
+| Google SRE Error Budgets | 서비스 요청 실패율을 SLI로 사용 | **미적용:** JEUS 로그 오류 이벤트 비율은 서비스 요청 실패율을 대체하지 못함 |
+
+검토한 원문:
+- https://help.splunk.com/en/splunk-enterprise/search/spl2-search-reference/timechart-command/timechart-command-usage
+- https://docs.datadoghq.com/logs/error_tracking/explorer/
+- https://www.elastic.co/guide/en/logs/guide/current/detect-log-anomalies.html
+- https://sre.google/workbook/alerting-on-slos/
+
+최대 1GiB 입력 스트리밍과 32B/이벤트 인덱스는 유지합니다. 급증 판단은 요약 수치만 추가 저장하며, 근본 원인 분석·임의 데이터베이스 조회·미확인 과거 데이터 보정은 하지 않습니다.

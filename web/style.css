@@ -67,3 +67,13 @@ button.issue-item:hover,button.issue-item:focus-visible{background:#263954;borde
 .hotspot-actions{display:flex;gap:6px;flex-shrink:0}
 .hotspot-actions button{font-size:10px;white-space:nowrap}
 @media(max-width:650px){.hotspot-row{align-items:flex-start;flex-direction:column}.hotspot-actions{flex-wrap:wrap}}
+
+/* v6.3: bounded historical error-rate screening; no per-event storage. */
+.surges-panel{border:1px solid #344a5c;border-radius:14px;background:#172536;margin-bottom:18px;padding:18px 22px}
+.surge-list{display:grid;gap:8px;margin-top:12px}
+.surge-row{display:flex;justify-content:space-between;align-items:center;gap:16px;border:1px solid #3c536c;border-radius:8px;background:#1a2b3e;padding:11px 12px}
+.surge-stat{display:flex;flex-direction:column;gap:5px;min-width:0;overflow-wrap:anywhere}
+.surge-stat strong{font-size:12px;color:#e5d4af;font-variant-numeric:tabular-nums}
+.surge-stat span{font-size:11px;color:#bdcee1}
+.surge-footnote{margin:12px 0 0}
+@media(max-width:650px){.surge-row{align-items:flex-start;flex-direction:column}}
