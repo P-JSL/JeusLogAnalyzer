@@ -1,0 +1,9 @@
+*.go text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.log text eol=lf
+*.bin.gz binary
+*.png binary

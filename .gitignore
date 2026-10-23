@@ -1,0 +1,27 @@
+# Build artifacts
+JEUS_Lens_Windows_x64.exe
+jeus-lens
+*.test
+*.exe
+*.zip
+
+# Local JEUS analysis output (never publish logs/metadata)
+*.log
+*.out
+*.trace
+*.tmp
+index.bin
+index.part
+summary.json
+summary.part
+archive/
+
+# Workstations and editors
+.DS_Store
+.vscode/
+.idea/
+__pycache__/
+node_modules/
+# Sanitized synthetic fixtures are safe and required by CI.
+!tests/sample_jeus.log
+!tests/sample_cp949.log

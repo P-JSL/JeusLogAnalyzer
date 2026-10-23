@@ -1,0 +1,41 @@
+name: Verify and build JEUS Lens
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Go regression tests
+        run: go test ./... -count=1
+      - name: Go static analysis and race tests
+        run: |
+          go vet ./...
+          go test -race ./... -count=1
+      - name: JavaScript parser and metadata search tests
+        run: node --test tests/parser.test.js tests/search-worker.test.js
+      - name: Build backend and exercise HTTP API
+        run: |
+          go build -trimpath -o jeus-lens .
+          node tests/api-smoke.js
+      - name: Compile Windows x64 application
+        run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags='-s -w -H=windowsgui' -o JEUS_Lens_Windows_x64.exe .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JEUS-Lens-Windows-x64
+          path: JEUS_Lens_Windows_x64.exe
+          retention-days: 14
+          if-no-files-found: error

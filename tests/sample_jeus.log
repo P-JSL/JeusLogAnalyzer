@@ -1,0 +1,15 @@
+[2026.10.23 09:01:03][2] [ms1-1] [SERVER-0248] The JEUS server is STARTING.
+[2026.10.23 09:01:05][2] [ms1-1] [SERVER-0251] JEUS server started successfully.
+[2026.10.23 09:03:12][1] [ms1-9] [WEB-3124] Connection pool usage reached 90 percent.
+[2026.10.23 09:03:45][0] [ms1-10] [WEB-0009] Servlet processing failed
+java.lang.NullPointerException: Cannot invoke "String.length()"
+    at com.sample.service.OrderService.save(OrderService.java:78)
+    at com.sample.web.OrderServlet.doPost(OrderServlet.java:41)
+Caused by: java.sql.SQLException: Connection timed out
+    at com.sample.dao.OrderDao.insert(OrderDao.java:50)
+[2026.10.23 09:04:00][0] [ms1-10] [WEB-0010] Servlet processing failed again
+java.lang.NullPointerException: second failure
+    at com.sample.service.OrderService.save(OrderService.java:78)
+[2026.10.23 09:05:01][2] [ms1-2] [EJB-1010] Transaction completed.
+[2026.10.23 09:06:22][1] [ms1-8] [SERVER-0520] CPU above warning threshold.
+[2026.10.23 09:06:38][2] [ms1-8] [SERVER-1010] Application deployed.
