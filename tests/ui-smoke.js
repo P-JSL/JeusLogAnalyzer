@@ -6,6 +6,7 @@ const {spawn} = require('node:child_process');
 const fs=require('node:fs');const path=require('node:path');const os=require('node:os');
 const assert=require('node:assert/strict');
 const root=path.join(__dirname,'..'),html=fs.readFileSync(path.join(root,'web/index.html'),'utf8'),css=fs.readFileSync(path.join(root,'web/style.css'),'utf8'),parser=fs.readFileSync(path.join(root,'web/parser.js'),'utf8'),app=fs.readFileSync(path.join(root,'web/app.js'),'utf8');
+const diagnostics=fs.readFileSync(path.join(root,'web/diagnostics.js'),'utf8');
 const delay=t=>new Promise(r=>setTimeout(r,t));
 let chrome,ws,index=0,pending=new Map();
 async function until(fn,timeout=12000){let last;let start=Date.now();while(Date.now()-start<timeout){try{last=await fn();if(last)return last;}catch{}await delay(120);}throw Error('timeout: '+String(last));}
@@ -36,7 +37,7 @@ const pages=await until(async()=>{const r=await fetch(`http://127.0.0.1:${port}/
 ws=new WebSocket(pages[0].webSocketDebuggerUrl);await new Promise(r=>ws.addEventListener('open',r,{once:true}));ws.addEventListener('message',e=>{const m=JSON.parse(e.data);if(pending.has(m.id)){const q=pending.get(m.id);pending.delete(m.id);m.error?q.reject(Error(JSON.stringify(m.error))):q.resolve(m.result);}});await call('Runtime.enable');await call('Page.enable');
 await js(`document.open();document.write(${JSON.stringify(html)});document.close();`);
 await js(`(()=>{let s=document.createElement('style');s.textContent=${JSON.stringify(css)};document.head.append(s);})()`);
-await js(parser);await js(mock);await js(app);
+await js(parser);await js(diagnostics);await js(mock);await js(app);
 const lines=['[2026.10.23 09:00:00][0] [m-1] [APP-3333] SQL error ORA-00904 invalid column','[2026.10.23 09:00:01][2] [m-1] [APP-3334] request complete'];
 await js(`(()=>{const txt=${JSON.stringify(lines.join('\n'))};const a=txt.split('\\n');let p=0;window.mockRows=a.map((s,i)=>{const n=new TextEncoder().encode(s).length;const row={index:i,offset:p,length:n,line:i+1,endLine:i+1,category:i===0?1:0,level:i===0?1:3,sqlType:i===0?'SQL 문법·객체':'기타 SQL'};p+=n+1;return row;});let blob=new File([txt],'sample.log',{type:'text/plain'});const dt=new DataTransfer();dt.items.add(blob);document.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt}));return true;})()`);
 await until(()=>js(`!document.querySelector('#results').classList.contains('hidden')&&document.querySelectorAll('#logRows tr').length===2`));
@@ -53,6 +54,14 @@ await until(()=>js(`window.mockGroup==='sql:1'&&document.querySelectorAll('#logR
 await js(`document.querySelector('#logRows tr').click()`);
 assert.equal(await js(`document.querySelector('#detailSQLType').textContent`),'SQL 문법·객체');
 assert.match(await js(`document.querySelector('#detailRaw').textContent`),/ORA-00904/);
+assert.match(await js(`document.querySelector('#faultLocation').textContent`),/원본 로그 1행/);
+assert.equal(await js(`document.querySelectorAll('#detailRaw .fault-highlight').length`),1);
+const example=['[2026.10.23 10:01:00][0] insert failed LOT_ID=0044-26-0072','==> Preparing: INSERT INTO T(LOT_ID) VALUES (?)','==> Parameters: 0044-26-0072(String)','Caused by: java.sql.SQLException: ORA-00001',' at com.acme.Db.save(Db.java:87)'].join('\n');
+await js(`showDetail({index:0,line:51,endLine:55,level:'error',category:'sql',time:'2026.10.23 10:01:00',code:'ORA-00001',sqlState:'',sqlType:'제약조건',thread:'m-1',rootCause:'',message:'insert failed',raw:${JSON.stringify(example)},truncated:false});`);
+assert.match(await js(`document.querySelector('#faultLocation').textContent`),/Db.java:87/);
+assert.match(await js(`document.querySelector('#faultData').textContent`),/0044-26-0072/);
+assert.match(await js(`document.querySelector('#faultData').textContent`),/INSERT INTO T/);
+assert.equal(await js(`document.querySelector('#detailRaw .fault-highlight').dataset.logLine`),'55');
 assert.ok((await js(`document.querySelectorAll('#hourlyChart .hour-item').length`))>0);
 const report=await js(`diagnosticSummary(window.mockSummary)`);assert.match(report,/원본 로그 제외/);assert.match(report,/SQL 관련 이벤트: 1/);assert.ok(!report.includes('ORA-00904 invalid column'),'report should not embed full raw messages');
 await js(`document.querySelector('#closeDetail').click()`);

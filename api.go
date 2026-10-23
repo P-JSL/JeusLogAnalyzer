@@ -565,15 +565,16 @@ func (s *engine) resolveFilter(id, fid string, meta Summary) (int64, *os.File, e
 	f, e := os.Open(entry.Path)
 	return entry.Total, f, e
 }
-func filterRecord(idx *os.File, filterFile *os.File, index int64) (diskRecord, error) {
+func filterRecord(idx *os.File, filterFile *os.File, index int64) (diskRecord, int64, error) {
 	if filterFile != nil {
 		var b [8]byte
 		if _, e := filterFile.ReadAt(b[:], index*8); e != nil {
-			return diskRecord{}, e
+			return diskRecord{}, 0, e
 		}
 		index = int64(binary.LittleEndian.Uint64(b[:]))
 	}
-	return readRecord(idx, index)
+	rec, err := readRecord(idx, index)
+	return rec, index, err
 }
 func (s *engine) page(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
@@ -610,12 +611,12 @@ func (s *engine) page(w http.ResponseWriter, r *http.Request) {
 	defer idx.Close()
 	rows := make([]map[string]any, 0, pageSize)
 	for i := (page - 1) * pageSize; i < page*pageSize && i < total; i++ {
-		rec, e := filterRecord(idx, filterFile, i)
+		rec, originalIndex, e := filterRecord(idx, filterFile, i)
 		if e != nil {
 			apiError(w, "invalid index", 500)
 			return
 		}
-		rows = append(rows, rec.JSON(i))
+		rows = append(rows, rec.JSON(originalIndex))
 	}
 	jsonReply(w, map[string]any{"page": page, "pages": maxPages, "total": total, "rows": rows})
 }

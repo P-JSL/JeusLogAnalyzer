@@ -32,7 +32,7 @@ const delay=ms=>new Promise(r=>setTimeout(r,ms));
  const invalid=await fetch(host+`api/verify?id=${id}`,{method:'POST',headers:{Origin:origin,'Content-Type':'application/octet-stream'},body:changed});assert.equal(invalid.status,409);
  const filtered=await fetch(host+'api/filter',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({id,group:'sql:8',query:''})});
  assert.equal(filtered.status,200);const f=await filtered.json();assert.equal(f.total,1);
- const page=await fetch(host+`api/page?id=${id}&filterId=${f.filterId}&page=1`);assert.equal(page.status,200);const data=await page.json();assert.equal(data.rows.length,1);assert.equal(data.rows[0].sqlType,'기타 SQL');
+ const page=await fetch(host+`api/page?id=${id}&filterId=${f.filterId}&page=1`);assert.equal(page.status,200);const data=await page.json();assert.equal(data.rows.length,1);assert.equal(data.rows[0].sqlType,'기타 SQL');assert.equal(data.rows[0].index,3,'filtered page must preserve original event index for adjacent context');
  const archives=await (await fetch(host+'api/archives')).json();assert.equal(archives.items[0].id,id);
  console.log('BACKEND_IMPORT_VERIFY_FILTER_PAGE_HISTORY_PASS',JSON.stringify({events:summary.stats.all,sql:summary.stats.sql,bytes:summary.metadataBytes}));
 })().catch(err=>{console.error(err);process.exitCode=1}).finally(()=>{child.kill('SIGTERM')});

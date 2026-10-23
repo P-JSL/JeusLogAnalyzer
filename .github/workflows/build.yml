@@ -26,7 +26,7 @@ jobs:
           go vet ./...
           go test -race ./... -count=1
       - name: JavaScript parser and metadata search tests
-        run: node --test tests/parser.test.js tests/search-worker.test.js
+        run: node --test tests/parser.test.js tests/search-worker.test.js tests/diagnostics.test.js
       - name: Build backend and exercise HTTP API
         run: |
           go build -trimpath -o jeus-lens .
