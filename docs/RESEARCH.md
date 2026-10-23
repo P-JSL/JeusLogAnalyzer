@@ -61,3 +61,28 @@
 - 서비스/배포 버전 등의 신뢰할 수 있는 식별자가 없으므로 Datadog처럼 서비스 단위로 그룹을 분리하지 않습니다. 둘 이상의 서비스가 합쳐진 로그에서는 서로 다른 사건을 같은 그룹으로 볼 수 있습니다.
 - `Caused by`와 스택 프레임을 읽어 오류 위치를 가려낼 때 JEUS 설정마다 스택 출력 순서가 다르면 지문이 달라질 수 있습니다.
 - 합성 로그 자동 테스트를 수행했지만 실제 운영 JEUS 로그 데이터셋에서 정밀도/재현율을 측정하지 않았습니다.
+
+## v6.2.0 상용 제품 검토 및 적용 선택 (2026-10-23)
+
+| 제품 | 공식 문서에 나온 기술 | JEUS Lens 적용 |
+|---|---|---|
+| Splunk SPL2 | 5분 등 `span` 기반 `timechart`와 시간별 이벤트 집계 | **적용**: 로그 헤더 시각을 5분 그룹으로 집계, 오류 많은 구간과 실제 첫/마지막 사건 탐색 |
+| Elastic Observability | 텍스트 패턴의 분포/범주화, 기계학습 기반 로그량 이상 탐지 | **부분 참고**: 오류 집중 구간 표시는 구현. ML 이상 탐지·학습 기반 범주화는 비용과 자료 검증 부재로 **미구현** |
+| Datadog | 예외/스택 프레임 기반 Error Tracking, before/after context | **기존 기능 유지**: 예외 그룹·전후 이벤트 원본 참조. 서비스/호스트 기반 정확한 사건 연관은 신뢰 가능한 식별자 부재로 **미구현** |
+| Grafana Loki | 동적·고카디널리티 레이블 인덱스 회피, 수집 시 인덱스 경량화 | **설계 유지**: 동적 LOT_ID/SQL 텍스트를 색인·요약 파일에 저장하지 않음 |
+| OpenSearch | 동적 토큰 치환을 이용한 비정형 로그 패턴 분석 | **검토만**: 정규화 오류/입력값 혼합 시 충돌 가능. 독립 성능·정확도 시험 전 미구현 |
+
+원문:
+- https://help.splunk.com/en/splunk-enterprise/search/spl2-search-reference/timechart-command/timechart-command-usage
+- https://www.elastic.co/docs/explore-analyze/discover/run-pattern-analysis-discover
+- https://docs.datadoghq.com/logs/error_tracking/error_grouping/
+- https://docs.datadoghq.com/logs/explorer/side_panel/
+- https://grafana.com/docs/loki/latest/get-started/labels/bp-labels/
+- https://observability.opensearch.org/docs/ppl/commands/patterns/
+
+### 알고리즘·자원 비용
+
+- 입력 이벤트 수를 N, 인식된 고유 5분 구간 수를 K라고 할 때 집계는 해시 테이블 평균 O(N), 우선순위 정렬은 O(K log K)입니다. K는 50,000으로 제한합니다.
+- 로그 헤더 시각을 신뢰할 수 없는 경우 구간을 만들지 않습니다. 오류 건수 순으로 상위 12개만 저장하며 유효 시간대가 부족하더라도 임의로 보충하지 않습니다.
+- 기존 32 bytes/이벤트 인덱스에 추가 바이트가 없으며, 요약 JSON만 고정 상한의 소규모 항목이 추가됩니다. 원본 저장·로그 메시지 전수 인덱싱·외부 호출·ML은 없습니다.
+- SQL 오류 수량은 명시적인 `ERROR/SEVERE` 등 **오류 레벨이면서 SQL 패턴인 이벤트**만 집계합니다. INFO 레벨 내 SQL 패턴은 SQL 오류로 올리지 않습니다.

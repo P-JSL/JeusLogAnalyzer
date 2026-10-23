@@ -14,7 +14,7 @@ async function call(method,params={}){return new Promise((resolve,reject)=>{let 
 async function js(code){const result=await call('Runtime.evaluate',{expression:code,awaitPromise:true,returnByValue:true});if(result.exceptionDetails)throw Error(JSON.stringify(result.exceptionDetails));return result.result.value;}
 const mock=`
 (()=>{
-window.mockSummary={issueVersion:1,issues:[{id:'0123456789abcdef',name:'ORA-00904 · SQLException',count:1,firstEvent:0,lastEvent:0}],id:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',name:'sample.log',size:0,encoding:'utf-8',imported:'2026-10-23T12:00:00Z',storageMode:'metadata-only',metadataBytes:48,lines:2,sourceHash:'example',indexed:true,stats:{all:2,error:1,warning:0,info:1,sql:1,otherError:0},top:[{name:'ORA-00904',count:1}],sqlTop:[{name:'ORA-00904',count:1}],sqlTypes:[{name:'SQL 문법·객체',count:1}],hourly:[{name:'2026.10.23 09',count:2}]};
+window.mockSummary={issueVersion:1,issues:[{id:'0123456789abcdef',name:'ORA-00904 · SQLException',count:1,firstEvent:0,lastEvent:0}],id:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',name:'sample.log',size:0,encoding:'utf-8',imported:'2026-10-23T12:00:00Z',storageMode:'metadata-only',metadataBytes:48,lines:2,sourceHash:'example',indexed:true,stats:{all:2,error:1,warning:0,info:1,sql:1,otherError:0},top:[{name:'ORA-00904',count:1}],sqlTop:[{name:'ORA-00904',count:1}],sqlTypes:[{name:'SQL 문법·객체',count:1}],hourly:[{name:'2026.10.23 09',count:2}],hotspots:[{start:'2026-10-23 09:00',all:2,errors:1,sqlErrors:1,warnings:0,firstErrorEvent:0,lastErrorEvent:0}]};
 window.mockRows=[];window.mockGroup='all';window.mockImported=false;
 const message=(data,status=200,type='application/json')=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':type}});
 window.fetch=async function(input,opts={}){
@@ -42,6 +42,10 @@ const lines=['[2026.10.23 09:00:00][0] [m-1] [APP-3333] SQL error ORA-00904 inva
 await js(`(()=>{const txt=${JSON.stringify(lines.join('\n'))};const a=txt.split('\\n');let p=0;window.mockRows=a.map((s,i)=>{const n=new TextEncoder().encode(s).length;const row={index:i,offset:p,length:n,line:i+1,endLine:i+1,category:i===0?1:0,level:i===0?1:3,sqlType:i===0?'SQL 문법·객체':'기타 SQL'};p+=n+1;return row;});let blob=new File([txt],'sample.log',{type:'text/plain'});const dt=new DataTransfer();dt.items.add(blob);document.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt}));return true;})()`);
 await until(()=>js(`!document.querySelector('#results').classList.contains('hidden')&&document.querySelectorAll('#logRows tr').length===2`));
 assert.equal(await js(`document.querySelector('#countAll').textContent`),'2');assert.equal(await js(`document.querySelector('#sqlCount').textContent`),'1');
+assert.equal(await js(`document.querySelectorAll('#hotspotList .hotspot-row').length`),1);
+await js(`document.querySelector('#hotspotList .hotspot-row button').click()`);
+await until(()=>js(`!document.querySelector('#detailPanel').classList.contains('hidden') && document.querySelector('#detailRaw').textContent.includes('ORA-00904')`));
+await js(`document.querySelector('#closeDetail').click()`);
 await js(`document.querySelector('#issueList button.issue-item').click()`);
 await until(()=>js(`window.mockGroup==='issue:0123456789abcdef' && document.querySelectorAll('#logRows tr').length===1`));
 assert.equal(await js(`document.querySelector('#searchBox').disabled`),true);
@@ -69,5 +73,5 @@ await call('Emulation.setDeviceMetricsOverride',{width:1480,height:1050,deviceSc
 const snap=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});fs.writeFileSync(path.join(root,'preview.png'),Buffer.from(snap.data,'base64'));
 const rebindState=await js(`(async()=>{ await rebind(new File(['different'],'wrong.log'),window.mockSummary); return {staleFile:currentFile!==null,staleSummary:summary!==null,visible:!document.querySelector('#results').classList.contains('hidden'),warning:document.querySelector('#notice').textContent.includes('크기가')};})()`);
 assert.deepEqual(rebindState,{staleFile:false,staleSummary:false,visible:false,warning:true});
-console.log('CHROMIUM_UI_DROP_ISSUE_GROUP_SQL_FILTER_DETAIL_TIMELINE_REBIND_PASS');
+console.log('CHROMIUM_UI_DROP_ISSUE_GROUP_SQL_FILTER_HOTSPOT_JUMP_DETAIL_REBIND_PASS');
 }main().catch(e=>{console.error(e);process.exitCode=1}).finally(async()=>{try{ws?.close()}catch{}chrome?.kill('SIGKILL');await delay(150)});

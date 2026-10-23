@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf16"
 )
 
@@ -271,24 +272,56 @@ type Issue struct {
 	LastEvent  int64  `json:"lastEvent"`
 }
 
+// Hotspot summarizes a five-minute interval from timestamps embedded in log
+// headers. All event references are original source index positions; no log
+// bodies, SQL literals, or request identifiers are written to the summary.
+type Hotspot struct {
+	Start           string `json:"start"`
+	All             int64  `json:"all"`
+	Errors          int64  `json:"errors"`
+	Warnings        int64  `json:"warnings"`
+	SQLErrors       int64  `json:"sqlErrors"`
+	FirstErrorEvent int64  `json:"firstErrorEvent"`
+	LastErrorEvent  int64  `json:"lastErrorEvent"`
+}
+
+// fiveMinuteBucket treats the header's time as an unzoned wall-clock value.
+// It never guesses a server timezone, and invalid timestamps are ignored.
+func fiveMinuteBucket(stamp string) string {
+	if len(stamp) < 16 {
+		return ""
+	}
+	raw := strings.NewReplacer(".", "-", "/", "-").Replace(stamp[:16])
+	if raw[10] == 'T' {
+		raw = raw[:10] + " " + raw[11:]
+	}
+	parsed, err := time.Parse("2006-01-02 15:04", raw)
+	if err != nil {
+		return ""
+	}
+	return parsed.Add(-time.Duration(parsed.Minute()%5) * time.Minute).Format("2006-01-02 15:04")
+}
+
 type Summary struct {
-	SourceHash    string  `json:"sourceHash"`
-	StorageMode   string  `json:"storageMode"`
-	MetadataBytes int64   `json:"metadataBytes"`
-	ID            string  `json:"id"`
-	Name          string  `json:"name"`
-	Size          int64   `json:"size"`
-	Encoding      string  `json:"encoding"`
-	Imported      string  `json:"imported"`
-	Counts        Counts  `json:"stats"`
-	Lines         int64   `json:"lines"`
-	Top           []Pair  `json:"top"`
-	SQLTop        []Pair  `json:"sqlTop"`
-	Hourly        []Pair  `json:"hourly"`
-	SQLTypes      []Pair  `json:"sqlTypes"`
-	Indexed       bool    `json:"indexed"`
-	IssueVersion  int     `json:"issueVersion,omitempty"`
-	Issues        []Issue `json:"issues,omitempty"`
+	SourceHash     string    `json:"sourceHash"`
+	StorageMode    string    `json:"storageMode"`
+	MetadataBytes  int64     `json:"metadataBytes"`
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	Size           int64     `json:"size"`
+	Encoding       string    `json:"encoding"`
+	Imported       string    `json:"imported"`
+	Counts         Counts    `json:"stats"`
+	Lines          int64     `json:"lines"`
+	Top            []Pair    `json:"top"`
+	SQLTop         []Pair    `json:"sqlTop"`
+	Hourly         []Pair    `json:"hourly"`
+	SQLTypes       []Pair    `json:"sqlTypes"`
+	Indexed        bool      `json:"indexed"`
+	IssueVersion   int       `json:"issueVersion,omitempty"`
+	Issues         []Issue   `json:"issues,omitempty"`
+	Hotspots       []Hotspot `json:"hotspots,omitempty"`
+	HotspotLimited bool      `json:"hotspotLimited,omitempty"`
 }
 type indexState struct {
 	offset    uint64
@@ -304,6 +337,7 @@ type indexState struct {
 	eventCode string
 	sqlType   byte
 	clock     string
+	minute    string
 	rootClass string
 	frame     string
 }
@@ -476,6 +510,8 @@ func buildIndexStreamContext(ctx context.Context, source io.Reader, dir, enc str
 	top := map[string]int64{}
 	sqlTop := map[string]int64{}
 	hourly := map[string]int64{}
+	hotspots := make(map[string]*Hotspot)
+	hotspotsLimited := false
 	sqlTypes := map[string]int64{}
 	flush := func(endOffset uint64) error {
 		if state == nil {
@@ -543,6 +579,30 @@ func buildIndexStreamContext(ctx context.Context, source io.Reader, dir, enc str
 		}
 		if state.clock != "" {
 			hourly[state.clock]++
+		}
+		if state.minute != "" {
+			bucket := hotspots[state.minute]
+			if bucket == nil && len(hotspots) < 50000 {
+				bucket = &Hotspot{Start: state.minute, FirstErrorEvent: -1, LastErrorEvent: -1}
+				hotspots[state.minute] = bucket
+			} else if bucket == nil {
+				hotspotsLimited = true
+			}
+			if bucket != nil {
+				bucket.All++
+				if level == 1 {
+					bucket.Errors++
+					if cat == 1 {
+						bucket.SQLErrors++
+					}
+					if bucket.FirstErrorEvent < 0 {
+						bucket.FirstErrorEvent = counts.All - 1
+					}
+					bucket.LastErrorEvent = counts.All - 1
+				} else if level == 2 {
+					bucket.Warnings++
+				}
+			}
 		}
 		rec := diskRecord{Offset: state.offset, Length: uint32(length), Line: state.line, EndLine: state.end, Level: level, Category: cat, Subtype: state.sqlType}
 		issueID, issueName := issueFingerprint(state, level)
@@ -623,7 +683,8 @@ func buildIndexStreamContext(ctx context.Context, source io.Reader, dir, enc str
 					}
 				}
 				if len(clock) >= 13 {
-					st.clock = strings.ReplaceAll(clock[:13], "/", "-")
+					st.clock = strings.NewReplacer("/", "-", ".", "-").Replace(clock[:13])
+					st.minute = fiveMinuteBucket(clock)
 				}
 			}
 			state = st
@@ -747,5 +808,25 @@ func buildIndexStreamContext(ctx context.Context, source io.Reader, dir, enc str
 		h = append(h, Pair{k, v})
 	}
 	sort.Slice(h, func(i, j int) bool { return h[i].Name < h[j].Name })
-	return Summary{Counts: counts, Lines: int64(lineNo), Top: sorted(top, 8), SQLTop: sorted(sqlTop, 8), Hourly: h, SQLTypes: sorted(sqlTypes, 10), Encoding: enc, Indexed: true, IssueVersion: 1, Issues: issueList}, nil
+	// Rank only intervals containing errors. A high count is a triage signal,
+	// not statistical evidence of a change point or a causal relationship.
+	groups := make([]Hotspot, 0, len(hotspots))
+	for _, item := range hotspots {
+		if item.Errors > 0 {
+			groups = append(groups, *item)
+		}
+	}
+	sort.Slice(groups, func(i, j int) bool {
+		if groups[i].Errors != groups[j].Errors {
+			return groups[i].Errors > groups[j].Errors
+		}
+		if groups[i].SQLErrors != groups[j].SQLErrors {
+			return groups[i].SQLErrors > groups[j].SQLErrors
+		}
+		return groups[i].Start < groups[j].Start
+	})
+	if len(groups) > 12 {
+		groups = groups[:12]
+	}
+	return Summary{Counts: counts, Lines: int64(lineNo), Top: sorted(top, 8), SQLTop: sorted(sqlTop, 8), Hourly: h, SQLTypes: sorted(sqlTypes, 10), Encoding: enc, Indexed: true, IssueVersion: 1, Issues: issueList, Hotspots: groups, HotspotLimited: hotspotsLimited}, nil
 }

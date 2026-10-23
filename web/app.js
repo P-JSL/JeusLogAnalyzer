@@ -27,7 +27,41 @@ function showSummary(m){$('results').classList.remove('hidden');$('fileName').te
  const ratios=[m.stats.error,m.stats.warning,m.stats.info].map(n=>m.stats.all?(n/m.stats.all*100):0);document.querySelectorAll('#distributionBar .segment').forEach((el,i)=>el.style.width=ratios[i]+'%');['barError','barWarn','barInfo'].forEach((id,i)=>$(id).textContent=ratios[i].toFixed(1)+'%');const issue=$('issueList');issue.replaceChildren();const issueData=m.issueVersion===1?(m.issues||[]):(m.top||[]);$('topIssueCount').textContent=m.issueVersion===1?'상위 8개 · 클릭하여 필터':'상위 8개';for(const p of issueData.slice(0,8)){const item=document.createElement(m.issueVersion===1?'button':'div');if(m.issueVersion===1){item.type='button';item.title=`처음 이벤트 #${fmt(p.firstEvent+1)} · 마지막 이벤트 #${fmt(p.lastEvent+1)}`;item.addEventListener('click',()=>selectIssue(p));}item.className='issue-item';const name=document.createElement('span');name.textContent=p.name;const num=document.createElement('b');num.textContent=fmt(p.count);item.append(name,num);issue.append(item);}if(!issue.childElementCount){const p=document.createElement('p');p.className='no-issues';p.textContent='집계된 오류가 없습니다.';issue.append(p);}
  $('sqlCount').textContent=fmt(m.stats.sql);$('otherErrorCount').textContent=fmt(m.stats.otherError);$('sqlTopList').replaceChildren();for(const p of (m.sqlTop||[])){const item=document.createElement('span');item.className='sql-chip';item.textContent=`${p.name} · ${fmt(p.count)}`;$('sqlTopList').append(item);}
  $('sqlTypeList').replaceChildren();for(const t of (m.sqlTypes||[])){const item=document.createElement('span');item.className='sql-chip';item.textContent=`${t.name}: ${fmt(t.count)}건`;$('sqlTypeList').append(item);}
+ renderHotspots(m);
  const chart=$('hourlyChart');chart.replaceChildren();const series=(m.hourly||[]),peak=Math.max(1,...series.map(x=>x.count));for(const t of series.slice(-48)){const block=document.createElement('div');block.className='hour-item';block.title=`${t.name} · ${fmt(t.count)}건`;const bar=document.createElement('span');bar.className='hour-bar';bar.style.height=Math.max(2,Math.round(100*t.count/peak))+'%';const x=document.createElement('small');x.textContent=t.name.slice(-5);block.append(bar,x);chart.append(block);}if(series.length>48){const info=document.createElement('small');info.textContent='최근 48개 시간 구간 표시';chart.append(info);} }
+// Splunk-inspired 5-minute aggregation without retaining message bodies.
+// Buttons open the real source event through the existing immutable offset index.
+function renderHotspots(m){
+ const box=$('hotspotList');box.replaceChildren();$('hotspotLimit').classList.toggle('hidden',!m.hotspotLimited);
+ const items=m.hotspots||[];
+ if(!items.length){const empty=document.createElement('p');empty.className='data-empty';empty.textContent='시간 정보가 있는 오류 이벤트가 없습니다.';box.append(empty);return;}
+ for(const h of items){
+  const row=document.createElement('div');row.className='hotspot-row';
+  const stat=document.createElement('div');stat.className='hotspot-stat';
+  const stamp=document.createElement('strong');stamp.textContent=h.start;
+  const counts=document.createElement('span');counts.textContent=`오류 ${fmt(h.errors)}건 · SQL 오류 ${fmt(h.sqlErrors)}건 · 경고 ${fmt(h.warnings)}건 · 전체 ${fmt(h.all)}건`;
+  stat.append(stamp,counts);
+  const actions=document.createElement('div');actions.className='hotspot-actions';
+  for(const [text,index] of [['첫 오류',h.firstErrorEvent],['마지막 오류',h.lastErrorEvent]]){
+   const button=document.createElement('button');button.type='button';button.className='btn secondary small';button.textContent=text;
+   button.disabled=!Number.isSafeInteger(index)||index<0;
+   button.addEventListener('click',()=>void showIndexedEvent(index));actions.append(button);
+  }
+  row.append(stat,actions);box.append(row);
+ }
+}
+async function showIndexedEvent(index){
+ if(!summary||!currentFile||!Number.isSafeInteger(index)||index<0||index>=summary.stats.all)return;
+ const run=operation,sourceId=summary.id,request=++detailRequest;
+ try{
+  const obj=await(await api('/api/page-by-ids',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:sourceId,indices:[index]})})).json();
+  if(run!==operation||request!==detailRequest||summary?.id!==sourceId)return;
+  if(!Array.isArray(obj.rows)||obj.rows.length!==1||obj.rows[0].index!==index)throw Error('원본 이벤트 인덱스를 찾을 수 없습니다.');
+  const ev=await readRow(obj.rows[0]);
+  if(run!==operation||request!==detailRequest||summary?.id!==sourceId)return;
+  showDetail(ev);
+ }catch(e){if(run===operation&&request===detailRequest)announce('오류 이벤트 조회 실패: '+e.message,true);}
+}
 async function readRow(rec){if(!currentFile)throw Error('원본 로그 파일을 먼저 선택해 주세요.');const offset=Number(rec.offset),length=Number(rec.length);if(!Number.isSafeInteger(offset)||!Number.isSafeInteger(length)||offset<0||offset+length>currentFile.size)throw Error('파일 내용과 메타데이터가 일치하지 않습니다. 다시 분석해 주세요.');const limit=Math.min(length,128*1024);const buf=await currentFile.slice(offset,offset+limit).arrayBuffer();let raw=new TextDecoder(summary.encoding,{fatal:false}).decode(buf).replace(/\r?\n$/,'');const first=raw.split('\n',1)[0];const h=JeusParser.header(first);const code=(raw.match(/\b(?:ORA|PLS)-\d{4,5}\b/i)||[])[0]||h?.code||((raw.match(/\b[A-Za-z][\w.-]*-\d{3,}\b/)||[])[0]||'');const sqlState=(raw.match(/\bSQL\s*STATE\s*[:=]?\s*([A-Za-z0-9]{5})/i)||[])[1]||'';const rootCause=(raw.match(/Caused by:[^\r\n]*/g)||[]).at(-1)||'';const message=(h?.message||first).trim().slice(0,1000);return {...rec,level:rec.level===1?'error':rec.level===2?'warning':'info',category:rec.category===1?'sql':'other',time:h?.time||'',thread:h?.thread||'',code,message,line:rec.line,endLine:rec.endLine,raw,truncated:length>limit,sqlCode:code,sqlState,rootCause};}
 async function materialize(meta){return Promise.all(meta.map(readRow));}
 async function drawPage(page){if(!summary)return;const run=operation,request=++pageRequest;try{let raw,total,pages,p;if(searchIds!==null){total=searchIds.length;pages=Math.max(1,Math.ceil(total/100));p=Math.max(1,Math.min(page,pages));const ids=searchIds.slice((p-1)*100,p*100);raw=await (await api('/api/page-by-ids',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:summary.id,indices:ids})})).json();}else{raw=await (await api(`/api/page?id=${summary.id}&filterId=${filterId}&page=${page}`)).json();total=raw.total;pages=raw.pages;p=raw.page;}
@@ -167,6 +201,10 @@ function diagnosticSummary(m){
   '',
   '유사 오류 그룹 (구조 기반, 첫/마지막 이벤트 번호)',
   ...(m.issues||[]).slice(0,30).map(x=>`${x.name} [${x.id}]: ${fmt(x.count)}건 / ${fmt(x.firstEvent+1)} ~ ${fmt(x.lastEvent+1)}`),
+  '',
+  '5분 단위 오류 집중 구간 (건수 기준, 이상 탐지 모델 아님)',
+  ...(m.hotspots||[]).map(x=>`${x.start}: 오류 ${fmt(x.errors)}건 / SQL 오류 ${fmt(x.sqlErrors)}건 / 전체 ${fmt(x.all)}건 · 첫 오류 #${fmt(x.firstErrorEvent+1)} / 마지막 #${fmt(x.lastErrorEvent+1)}`),
+  m.hotspotLimited?'신규 시간 구간 50,000개 초과로 일부 시간 구간 집계 생략':'',
   '',
   '시간대별 이벤트 (서버 로그 시각)',
   ...(m.hourly||[]).map(x=>`${x.name}: ${fmt(x.count)}`),

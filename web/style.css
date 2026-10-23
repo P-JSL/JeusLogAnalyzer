@@ -56,3 +56,14 @@ button.issue-item:hover,button.issue-item:focus-visible{background:#263954;borde
 .message-text .search-hint{display:block;font-size:10px;color:#9eacbe;margin-top:4px}
 
 .nearby-proof{font-size:10px;line-height:1.7;color:#a3b8d5;background:#1b2c43;padding:8px;border-left:2px solid #627fa5;overflow-wrap:anywhere}
+
+/* v6.2: lightweight five-minute error hotspot navigation (no new on-disk index). */
+.hotspots-panel{border:1px solid #27364a;border-radius:14px;background:#172536;margin-bottom:18px;padding:18px 22px}
+.hotspot-list{display:grid;gap:8px;margin-top:12px}
+.hotspot-row{display:flex;justify-content:space-between;align-items:center;gap:16px;border:1px solid #334159;border-radius:8px;background:#142235;padding:10px 12px}
+.hotspot-stat{display:flex;flex-direction:column;gap:5px;min-width:0;overflow-wrap:anywhere}
+.hotspot-stat strong{font-size:12px;color:#e8d2cf;font-variant-numeric:tabular-nums}
+.hotspot-stat span{font-size:11px;color:#afc0d8}
+.hotspot-actions{display:flex;gap:6px;flex-shrink:0}
+.hotspot-actions button{font-size:10px;white-space:nowrap}
+@media(max-width:650px){.hotspot-row{align-items:flex-start;flex-direction:column}.hotspot-actions{flex-wrap:wrap}}
