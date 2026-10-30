@@ -1,4 +1,6 @@
 //! HTTP API wire-compatible with Go's browser client. Source bytes are never persisted.
+// Handler helpers return full responses so their HTTP status and body survive unchanged.
+#![allow(clippy::result_large_err)]
 use crate::{engine::{self,Indexer,Record,Summary},remote};
 use axum::{body::Body,extract::{State,Query},http::{HeaderValue,Method,Request,StatusCode,header},middleware::{self,Next},response::{IntoResponse,Response},routing::{get,post},Json,Router};
 use futures_util::StreamExt;
