@@ -47,8 +47,8 @@ jobs:
           fi
           test -s RELEASE_NOTES_v1.0.2.md
           test -s rust/Cargo.lock
-          locked_version="$(sed -n '/^name = "jeus-lens-rust"/{n;s/^version = "\\([^"]*\\)"/\\1/p;}' rust/Cargo.lock)"
-          if [ "$locked_version" != "1.0.2" ]; then
+          locked_version="$(sed -n '/^name = "jeus-lens-rust"/{n;p;}' rust/Cargo.lock)"
+          if [ "$locked_version" != 'version = "1.0.2"' ]; then
             echo "::error file=rust/Cargo.lock::Rust package version mismatch: expected 1.0.2, got '${locked_version:-not found}'"
             exit 1
           fi
