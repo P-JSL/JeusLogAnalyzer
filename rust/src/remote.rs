@@ -54,12 +54,6 @@ pub async fn remote_tail(Json(q):Json<RemoteReq>)->Response{
  }).await;
  match res{Ok(Ok(v))=>Json(v).into_response(),Ok(Err(e))=>api_error(StatusCode::BAD_GATEWAY,e),Err(_)=>api_error(StatusCode::GATEWAY_TIMEOUT,"SFTP 20초 제한 초과")}
 }
-#[cfg(test)]mod tests{
- use super::*;
- #[test]fn deny_unsafe_remote(){let mut q=RemoteReq{host:"127.0.0.1".into(),port:22,user:"readonly".into(),password:"test".into(),fingerprint:format!("SHA256:{}", "A".repeat(43)),path:"/logs/server.log".into(),max_bytes:512*1024};assert!(check(&q).is_ok());q.path="/etc/../shadow.log".into();assert!(check(&q).is_err());q.path="/logs/server.log".into();q.fingerprint.clear();assert!(check(&q).is_err());q.fingerprint=format!("SHA256:{}", "A".repeat(43));q.max_bytes=1<<30;assert!(check(&q).is_err());}
-}
-
-
 // One request = one read-only SSH/SFTP connection. The stream emits each real
 // milestone while it happens and ends by closing the connection. No trace or
 // authentication data is persisted on the server.
@@ -165,4 +159,9 @@ pub async fn remote_trace(Json(q):Json<RemoteReq>)->Response{
  });
  let output=stream::unfold(rx,|mut r|async move{r.recv().await.map(|item|(Ok::<Bytes,Infallible>(item),r))});
  ([(header::CONTENT_TYPE,"application/x-ndjson; charset=utf-8"),(header::CACHE_CONTROL,"no-store"),(header::HeaderName::from_static("x-accel-buffering"),"no")],Body::from_stream(output)).into_response()
+}
+
+#[cfg(test)]mod tests{
+ use super::*;
+ #[test]fn deny_unsafe_remote(){let mut q=RemoteReq{host:"127.0.0.1".into(),port:22,user:"readonly".into(),password:"test".into(),fingerprint:format!("SHA256:{}", "A".repeat(43)),path:"/logs/server.log".into(),max_bytes:512*1024};assert!(check(&q).is_ok());q.path="/etc/../shadow.log".into();assert!(check(&q).is_err());q.path="/logs/server.log".into();q.fingerprint.clear();assert!(check(&q).is_err());q.fingerprint=format!("SHA256:{}", "A".repeat(43));q.max_bytes=1<<30;assert!(check(&q).is_err());}
 }
