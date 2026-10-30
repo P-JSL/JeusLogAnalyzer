@@ -240,6 +240,8 @@ pub async fn serve(listener:TcpListener,app:App)->Result<(),String>{
  .route("/api/page-by-ids",post(page_ids))
  .route("/api/remote-tail",post(remote::remote_tail))
  .route("/api/remote-trace",post(remote::remote_trace))
+ .route("/api/update/check",post(crate::updater::check))
+ .route("/api/update/apply",post(crate::updater::apply))
  .fallback(static_file).layer(middleware::from_fn_with_state(app.clone(),guard)).with_state(app);
  axum::serve(listener,routes).with_graceful_shutdown(async move{
   loop{tokio::time::sleep(std::time::Duration::from_secs(30)).await;
