@@ -4,8 +4,10 @@
 use axum::{extract::Json,response::{Response,IntoResponse},http::StatusCode};
 use serde::Deserialize;
 use serde_json::{json,Value};
+#[cfg(windows)]
 use sha2::{Digest,Sha256};
 use std::time::Duration;
+#[cfg(windows)]
 use futures_util::StreamExt;
 
 pub const VERSION:&str="1.0.2";
@@ -14,6 +16,7 @@ const RUST_EXE:&str="JEUS_Lens_Rust_Windows_x64.exe";
 const MAX_DOWNLOAD:u64=120*1024*1024;
 #[derive(Deserialize)]
 pub struct UpdateInput{#[serde(default)]token:String}
+#[cfg_attr(not(windows),allow(dead_code))]
 struct Release{version:String,tag:String,id:u64,size:u64,digest:String}
 fn bad(code:StatusCode,msg:&str)->Response{(code,Json(json!({"error":msg}))).into_response()}
 fn version(s:&str)->Option<[u32;3]>{
