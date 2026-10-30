@@ -158,16 +158,28 @@ async function loadNearby(ev,request){
   }
  }catch(error){if(request===detailRequest)target.textContent='주변 로그 조회 불가: '+error.message;}
 }
+function renderEvidenceTrail(fault){
+ const target=$('faultChain');target.replaceChildren();
+ const items=[...fault.exceptions.map(x=>({line:x.line,text:`예외 · ${x.role} · ${x.type}`})),
+   ...fault.sqlCodes.map(x=>({line:x.line,text:`DB 오류 코드 · ${x.code}`})),
+   ...fault.sqlStates.map(x=>({line:x.line,text:`SQLSTATE · ${x.code}`}))].sort((a,b)=>a.line-b.line);
+ if(!items.length){const p=document.createElement('p');p.className='data-empty';p.textContent='원본 미리보기 범위에서 예외 클래스 또는 DB 오류 코드를 찾지 못했습니다.';target.append(p);return;}
+ for(const item of items){const button=document.createElement('button');button.type='button';button.className='neighbor';
+   button.textContent=`원본 ${item.line}행 · ${item.text}`;
+   button.addEventListener('click',()=>{const line=$('detailRaw').querySelector(`[data-log-line="${item.line}"]`);if(!line)return;line.scrollIntoView({block:'center',behavior:'smooth'});line.classList.add('search-highlight');});
+   target.append(button);
+ }
+}
 function showDetail(e){detail=e;const request=++detailRequest;$('detailLevel').className='level-pill '+e.level;$('detailLevel').textContent=label[e.level]+(e.category==='sql'?' · SQL':'');$('detailMessage').textContent=e.message;$('detailTimestamp').textContent=e.time||'-';$('detailCode').textContent=e.code||'-';$('detailThread').textContent=e.thread||'-';$('detailLine').textContent=e.line===e.endLine?String(e.line):`${e.line} – ${e.endLine}`;$('detailSQLType').textContent=e.category==='sql'?(e.sqlType||'기타 SQL'):'-';$('detailSQLState').textContent=e.sqlState||'-';$('detailCause').textContent=e.rootCause||'-';const fault=JeusDiagnostics.diagnose(e.raw,e.line,e.level);
  const loc=fault.location;
  $('faultLocation').textContent=loc.kind==='stack'?`${loc.source}:${loc.sourceLine} · ${loc.method} (로그 ${loc.logLine}행)`: `원본 로그 ${loc.logLine}행 · 소스 코드 위치는 로그에 기록되지 않았습니다.`;
- $('faultCause').textContent=fault.causes.filter(x=>/Caused by/.test(x.message)).at(-1)?.message||'Java 스택의 최하위 원인이 없거나 기록되지 않았습니다.';
+ $('faultCause').textContent=fault.rootCause?.message||'Java 스택 또는 SQL 로그에 명시적인 하위 원인이 없습니다.';
  $('jumpFault').onclick=()=>{$('detailRaw').querySelector('.fault-highlight')?.scrollIntoView({block:'center',behavior:'smooth'});};
  const data=$('faultData');data.replaceChildren();if(fault.evidence.length){const table=document.createElement('table'),thead=document.createElement('thead'),hrow=document.createElement('tr');
   for(const name of ['유형','기록된 값','원본 줄']){const th=document.createElement('th');th.textContent=name;hrow.append(th);}thead.append(hrow);
   const body=document.createElement('tbody');for(const item of fault.evidence){const tr=document.createElement('tr');for(const val of [item.kind==='sql'?'SQL':item.name,item.value,String(item.line)]){const td=document.createElement('td');td.textContent=val;tr.append(td);}body.append(tr);}table.append(thead,body);data.append(table);
  }else{const p=document.createElement('p');p.className='data-empty';p.textContent='이 이벤트에 명시적으로 기록된 SQL·바인드값·입력 식별자가 없습니다. 실제 DB 레코드는 로그만으로 확인할 수 없습니다.';data.append(p);}
- renderFaultRaw(e,fault);void loadNearby(e,request);$('detailShade').classList.remove('hidden');$('detailPanel').classList.remove('hidden');$('closeDetail').focus();}
+ renderFaultRaw(e,fault);renderEvidenceTrail(fault);void loadNearby(e,request);$('detailShade').classList.remove('hidden');$('detailPanel').classList.remove('hidden');$('closeDetail').focus();}
 function closeDetail(){detailRequest++;detail=null;$('detailShade').classList.add('hidden');$('detailPanel').classList.add('hidden');}
 function safeFilename(s){return s.replace(/[^\p{L}\p{N}._-]/gu,'_').slice(0,80);}
 function csvSafe(s){return /^[\s\t\r\n]*[=+\-@]/.test(s)?"'"+s:s;}
