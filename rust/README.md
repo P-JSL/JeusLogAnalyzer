@@ -1,4 +1,4 @@
-# JEUS Lens — Rust edition (development)
+# JEUS Lens — Rust edition v1.0.0
 
 기존 Go 실행 파일에 의존하지 않는 독립적인 Rust 백엔드입니다. 기존 웹 화면을 Rust 실행 파일에 임베드하므로 HTML/CSS/JavaScript 화면 자체는 재사용합니다. **프런트엔드까지 Rust/WASM으로 재작성한 제품은 아닙니다.**
 
