@@ -8,7 +8,7 @@ use rand::RngCore;
 use serde::Deserialize;
 use serde_json::{json,Value};
 use sha2::{Sha256,Digest};
-use std::{collections::HashMap,fs::{self,File},io::{Read,Seek,SeekFrom,Write},path::{Path,PathBuf},sync::{Arc,Mutex,atomic::{AtomicU64,Ordering}},time::{SystemTime,UNIX_EPOCH},};
+use std::{collections::HashMap,fs::{self,File},io::{BufReader,BufWriter,Read,Seek,SeekFrom,Write},path::{Path,PathBuf},sync::{Arc,Mutex,atomic::{AtomicU64,Ordering}},time::{SystemTime,UNIX_EPOCH},};
 use tokio::net::TcpListener;
 use rust_embed::RustEmbed;
 use chrono::Utc;
@@ -156,9 +156,9 @@ async fn filter(State(app):State<App>,Json(q):Json<FilterReq>)->Response{
  if !["all","sql","otherError","error","review","warning","info"].contains(&q.group.as_str())&&selected_issue.is_none()&&!q.group.strip_prefix("sql:").is_some_and(|x|x.parse::<u8>().is_ok_and(|v|(1..=8).contains(&v))){return err(StatusCode::BAD_REQUEST,"invalid group")}
  if q.group=="all"{return Json(json!({"filterId":"all","total":meta.counts.all})).into_response()}
  let fid=token();let path=app.root.join(&q.id).join(format!("filter-{fid}.tmp"));
- let mut source=match records_file(&app,&q.id){Ok(f)=>f,Err(e)=>return e};
- let mut selected=match selected_issue{Some(_)=>match File::open(app.root.join(&q.id).join("issues.bin")){Ok(f)=>Some(f),Err(_)=>return err(StatusCode::NOT_FOUND,"issue index unavailable")},None=>None};
- let mut out=match File::create(&path){Ok(f)=>f,Err(_)=>return err(StatusCode::INTERNAL_SERVER_ERROR,"filter write failed")};
+ let mut source=match records_file(&app,&q.id){Ok(f)=>BufReader::with_capacity(1024*1024,f),Err(e)=>return e};
+ let mut selected=match selected_issue{Some(_)=>match File::open(app.root.join(&q.id).join("issues.bin")){Ok(f)=>Some(BufReader::with_capacity(512*1024,f)),Err(_)=>return err(StatusCode::NOT_FOUND,"issue index unavailable")},None=>None};
+ let mut out=match File::create(&path){Ok(f)=>BufWriter::with_capacity(1024*1024,f),Err(_)=>return err(StatusCode::INTERNAL_SERVER_ERROR,"filter write failed")};
  let mut total=0u64;let mut b=[0;24];let mut issue=[0;8];
  for index in 0..meta.counts.all{
   if source.read_exact(&mut b).is_err(){let _=fs::remove_file(path);return err(StatusCode::CONFLICT,"damaged index")}
@@ -186,8 +186,25 @@ async fn page(State(app):State<App>,Query(q):Query<HashMap<String,String>>)->Res
  let (total,mut ids)=match resolved_filter(&app,&id,fid,meta.counts.all){Ok(v)=>v,Err(e)=>return e};
  let pages=(total.saturating_add(99)/100).max(1);let page=q.get("page").and_then(|s|s.parse::<u64>().ok()).unwrap_or(1).clamp(1,pages);
  let mut idx=match records_file(&app,&id){Ok(f)=>f,Err(e)=>return e};
- let mut rows=Vec::new();
- for i in (page-1)*100..((page*100).min(total)){match filter_row(&mut idx,&mut ids,i){Ok(v)=>rows.push(v),Err(e)=>return e}}
+ let start=(page-1)*100;
+ let count=((page*100).min(total)-start) as usize;
+ let mut rows=Vec::with_capacity(count);
+ if ids.is_none(){
+  // Unfiltered pages contain contiguous 24-byte records: one seek/read
+  // instead of up to 100 filesystem syscalls and 100 small reads.
+  let mut block=vec![0u8;count*24];
+  if idx.seek(SeekFrom::Start(start*24)).is_err()||idx.read_exact(&mut block).is_err(){
+   return err(StatusCode::CONFLICT,"damaged index")
+  }
+  for (position,bytes) in block.chunks_exact(24).enumerate(){
+   let row=match Record::from_bytes(bytes){Ok(v)=>v,Err(_)=>return err(StatusCode::CONFLICT,"damaged index")};
+   rows.push(row.json(start+position as u64));
+  }
+ }else{
+  for i in start..start+count as u64{
+   match filter_row(&mut idx,&mut ids,i){Ok(v)=>rows.push(v),Err(e)=>return e}
+  }
+ }
  Json(json!({"page":page,"pages":pages,"total":total,"rows":rows})).into_response()
 }
 async fn index(State(app):State<App>,Query(q):Query<HashMap<String,String>>)->Response{
