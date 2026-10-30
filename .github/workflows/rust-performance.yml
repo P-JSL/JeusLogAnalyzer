@@ -1,0 +1,40 @@
+name: Compare Rust performance against main
+
+on:
+  pull_request:
+    paths:
+      - 'rust/**'
+      - 'tests/rust_perf_compare.py'
+      - '.github/workflows/rust-performance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  performance-comparison:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: baseline
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          shared-key: jeus-rust-native
+      - name: Build optimized Rust
+        working-directory: rust
+        run: cargo build --release --locked
+      - name: Build baseline Rust from exact PR base revision
+        working-directory: baseline/rust
+        run: cargo build --release --locked
+      - name: Measure import, scan, filter and page performance with identical output verification
+        run: |
+          python3 -u tests/rust_perf_compare.py baseline/rust/target/release/jeus-lens-rust rust/target/release/jeus-lens-rust
