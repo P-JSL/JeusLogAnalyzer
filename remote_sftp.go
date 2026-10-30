@@ -47,7 +47,11 @@ func validateRemoteTail(v remoteTailRequest) error {
  if len(v.Path)==0 || len(v.Path)>2048 || !strings.HasPrefix(v.Path,"/") || strings.ContainsAny(v.Path,"\\\x00\r\n") {return errors.New("절대 로그 경로를 입력해 주세요")}
  for _,segment:=range strings.Split(v.Path,"/"){if segment==".." || segment=="." {return errors.New("경로 이동은 허용하지 않습니다")}}
  if path.Clean(v.Path)!=v.Path {return errors.New("정규화된 절대 경로를 입력해 주세요")}
- if !remoteLogFilename.MatchString(path.Base(v.Path)) {
+ name:=strings.ToLower(path.Base(v.Path))
+ for _,compressed:=range []string{".gz",".zip",".bz2",".xz",".zst",".7z"} {
+  if strings.HasSuffix(name,compressed){return errors.New("압축 로그는 텍스트 미리보기에서 지원하지 않습니다")}
+ }
+ if !remoteLogFilename.MatchString(name) {
   return errors.New("지원하는 텍스트 로그(.log/.out/.txt/.trace/.err, access_log, syslog 등)만 읽을 수 있습니다. 압축 파일은 지원하지 않습니다")
  }
  if v.MaxBytes<1||v.MaxBytes>512*1024 {return errors.New("한 번에 최대 512KiB만 조회할 수 있습니다")}
