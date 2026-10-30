@@ -8,6 +8,8 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import urllib.parse
 import urllib.request
 
@@ -55,11 +57,25 @@ def post_stream(url,id):
     assert summary["stats"]["all"]==1,summary["stats"]
     return summary
 
+def keepalive(url,stop):
+    # Original Go and Rust both exit after three minutes without browser pings.
+    while not stop.wait(15):
+        try:
+            request=urllib.request.Request(url+"ping",data=b"",method="POST",
+                        headers={"Origin":url.rstrip("/")})
+            urllib.request.urlopen(request,timeout=10).read()
+        except Exception:
+            pass
+
+
 def main():
     with tempfile.TemporaryDirectory() as tmp:
         roots=pathlib.Path(tmp)
         a=start(sys.argv[1],roots/"go")
         b=start(sys.argv[2],roots/"rust")
+        stop=threading.Event()
+        workers=[threading.Thread(target=keepalive,args=(url,stop),daemon=True) for _,url in (a,b)]
+        for worker in workers:worker.start()
         try:
             summaries=[]
             for process,url in (a,b):
@@ -79,6 +95,8 @@ def main():
             assert g[1]==r[1],"1GiB metadata binary difference"
             print("RUST_GO_1GIB_STREAMING_HASH_INDEX_PARITY_PASS",flush=True)
         finally:
+            stop.set()
+            for worker in workers:worker.join(timeout=2)
             for p,_ in (a,b):
                 p.terminate()
                 try:p.wait(timeout=5)
