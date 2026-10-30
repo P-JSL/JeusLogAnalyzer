@@ -67,7 +67,7 @@ EXE는 코드 서명되지 않았습니다. 회사 보안 정책과 서명 신�
 ## 빌드 및 검증
 
 ```bash
-# Go 1.23+ 및 Node.js 22+ 권장. Go 런타임 의존성은 표준 라이브러리뿐입니다.
+# Go 1.25+ 및 Node.js 22+ 권장. (SFTP 최신 패치 종속성 때문에 Go 1.25 필요) Go 런타임 의존성은 표준 라이브러리뿐입니다.
 go test ./... -count=1
 go vet ./...
 node --test tests/parser.test.js tests/search-worker.test.js tests/diagnostics.test.js
