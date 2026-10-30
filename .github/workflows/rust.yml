@@ -7,6 +7,7 @@ on:
       - 'tests/rust_parity.py'
       - 'tests/rust_windows_runtime.py'
       - 'tests/rust_sftp_smoke.py'
+      - 'tests/update_network_smoke.py'
       - 'tests/rust_large_stream.py'
       - '.github/workflows/rust.yml'
       - '.github/workflows/rust-release.yml'
@@ -17,6 +18,7 @@ on:
       - 'tests/rust_parity.py'
       - 'tests/rust_windows_runtime.py'
       - 'tests/rust_sftp_smoke.py'
+      - 'tests/update_network_smoke.py'
       - 'tests/rust_large_stream.py'
       - '.github/workflows/rust.yml'
       - 'web/**'
@@ -87,6 +89,11 @@ jobs:
           sudo /usr/sbin/sshd -f /tmp/jeus_ci_sshd_config -E /tmp/jeus_ci_sshd.log
           fingerprint="$(ssh-keygen -lf /tmp/jeus_ci_hostkey.pub -E sha256 | awk '{print $2}')"
           python3 tests/rust_sftp_smoke.py rust/target/release/jeus-lens-rust 27721 "$fingerprint" /tmp/jeus_ci_server.log jeus_ci_sftp synthetic-testing-only
+          python3 tests/rust_sftp_smoke.py /tmp/jeus-go 27721 "$fingerprint" /tmp/jeus_ci_server.log jeus_ci_sftp synthetic-testing-only
+      - name: Live private GitHub updater metadata check (no install)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tests/update_network_smoke.py /tmp/jeus-go rust/target/release/jeus-lens-rust
 
   native-windows:
     runs-on: windows-latest
