@@ -124,14 +124,16 @@ pub struct Hotspot{pub start:String,pub all:u64,pub errors:u64,pub warnings:u64,
 pub struct Surge{pub start:String,pub errors:u64,pub all:u64,pub baseline_errors:u64,pub baseline_all:u64,pub first_error_event:i64,pub last_error_event:i64}
 #[derive(Serialize,Deserialize,Clone,Debug,Default)]
 #[serde(rename_all="camelCase")]
+fn is_false(value:&bool)->bool{!*value}
+#[allow(clippy::struct_excessive_bools)]
 pub struct Summary{
  #[serde(default)]pub source_hash:String,#[serde(default)]pub storage_mode:String,#[serde(default)]pub metadata_bytes:u64,
  #[serde(default)]pub id:String,#[serde(default)]pub name:String,#[serde(default)]pub size:u64,#[serde(default)]pub encoding:String,
  #[serde(default)]pub imported:String,#[serde(rename="stats")]pub counts:Counts,#[serde(default)]pub lines:u64,
  #[serde(default)]pub top:Vec<Pair>,#[serde(default)]pub sql_top:Vec<Pair>,#[serde(default)]pub hourly:Vec<Pair>,
  #[serde(default)]pub sql_types:Vec<Pair>,#[serde(default)]pub indexed:bool,#[serde(default)]pub issue_version:u8,
- #[serde(default)]pub issues:Vec<Issue>,#[serde(default)]pub hotspots:Vec<Hotspot>,#[serde(default)]pub hotspot_limited:bool,
- #[serde(default)]pub error_surges:Vec<Surge>
+ #[serde(default,skip_serializing_if="Vec::is_empty")]pub issues:Vec<Issue>,#[serde(default,skip_serializing_if="Vec::is_empty")]pub hotspots:Vec<Hotspot>,#[serde(default,skip_serializing_if="is_false")]pub hotspot_limited:bool,
+ #[serde(default,skip_serializing_if="Vec::is_empty")]pub error_surges:Vec<Surge>
 }
 fn ranked(map:HashMap<String,u64>,limit:usize)->Vec<Pair>{let mut v=map.into_iter().map(|(name,count)|Pair{name,count}).collect::<Vec<_>>();v.sort_by(|a,b|b.count.cmp(&a.count).then(a.name.cmp(&b.name)));v.truncate(limit);v}
 fn wilson(a:u64,n:u64)->(f64,f64){if n==0{return (0.,1.)}let z=1.96;let n=n as f64;let p=a as f64/n;let scale=1.+z*z/n;let mid=(p+z*z/(2.*n))/scale;let spread=z*((p*(1.-p)+z*z/(4.*n))/n).sqrt()/scale;((mid-spread).max(0.),(mid+spread).min(1.))}
