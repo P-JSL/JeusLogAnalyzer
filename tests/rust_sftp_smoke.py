@@ -23,6 +23,15 @@ def post(base,payload):
         return e.code,json.loads(e.read())
 
 
+def trace(base,payload):
+    req=urllib.request.Request(base+"/api/remote-trace",
+        data=json.dumps(payload).encode(),method="POST",
+        headers={"Origin":base,"Content-Type":"application/json"})
+    with urllib.request.urlopen(req,timeout=30) as resp:
+        assert resp.status==200,resp.status
+        return [json.loads(line) for line in resp.read().splitlines() if line.strip()]
+
+
 def main():
     binary=pathlib.Path(sys.argv[1]).resolve()
     port=int(sys.argv[2])
@@ -37,7 +46,10 @@ def main():
         env["JEUS_LENS_TEST_PORT"]="28733"
         base="http://127.0.0.1:28733"
         p=subprocess.Popen([str(binary)],env=env,cwd=tmp,
-                           stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                           stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True)
+        announced=p.stdout.readline().strip()
+        assert announced.startswith("http://127.0.0.1:"),announced
+        base=announced.rstrip("/")
         try:
             for _ in range(80):
                 if p.poll() is not None:
@@ -51,6 +63,13 @@ def main():
                 raise RuntimeError("Rust app unavailable")
             q={"host":"127.0.0.1","port":port,"user":user,"password":password,
                "fingerprint":fingerprint,"path":log_path,"maxBytes":512}
+            frames=trace(base,q)
+            codes=[f["code"] for f in frames]
+            assert "DONE" in codes,codes
+            assert "AUTHENTICATED" in codes,codes
+            assert "READY" in codes,codes
+            assert "FILE_VERIFIED" in codes,codes
+            assert base64.b64decode(frames[-1]["data"])==pathlib.Path(log_path).read_bytes()[-512:]
             status,data=post(base,q)
             assert status==200,(status,data)
             decoded=base64.b64decode(data["data"])
@@ -59,8 +78,13 @@ def main():
             assert data["size"]==len(expected)
             assert data["offset"]==len(expected)-len(decoded)
             assert data["partial"]==(len(expected)>512)
+            bad_frames=trace(base,{**q,"fingerprint":"SHA256:"+("A"*43)})
+            assert any(f.get("code") in ("HOSTKEY_MISMATCH","HOST_KEY_MISMATCH") for f in bad_frames),bad_frames
             status,data=post(base,{**q,"fingerprint":"SHA256:"+("A"*43)})
             assert status!=200,(status,data)
+            bad_frames=trace(base,{**q,"password":"incorrect-test-password"})
+            assert any(f.get("code")=="AUTH_FAILED" for f in bad_frames),bad_frames
+            assert "incorrect-test-password" not in json.dumps(bad_frames)
             status,data=post(base,{**q,"password":"incorrect-test-password"})
             assert status!=200,(status,data)
             symlink=str(pathlib.Path(log_path).with_name("server-link.log"))
@@ -77,7 +101,7 @@ def main():
             assert status==200,(status,data)
             assert base64.b64decode(data["data"])==replacement,(status,data)
             assert rotated.read_bytes()==expected
-            print("RUST_SFTP_READONLY_HOSTKEY_AUTH_SYMLINK_ROTATION_TAIL_GUARDS_PASS",flush=True)
+            print("GO_RUST_SFTP_LIVE_TRACE_READONLY_HOSTKEY_AUTH_SYMLINK_ROTATION_PASS",flush=True)
         finally:
             p.terminate()
             try:p.wait(timeout=5)
