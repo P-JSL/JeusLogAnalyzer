@@ -105,3 +105,18 @@ button.issue-item:hover,button.issue-item:focus-visible{background:#263954;borde
 .remote-trace-error{color:#ffb9b9;background:#372029}
 .remote-trace-error .remote-trace-key{color:#ff8e95}
 .remote-panel .btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* Multi-middleware SFTP connection profiles. Responsive and session-only. */
+.remote-service-bar,.remote-target-toolbar{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin:12px 0}
+.remote-service-bar label,.remote-target-toolbar label{display:flex;flex-direction:column;gap:5px;flex:1 1 180px;font-size:11px;color:#a6b9d3}
+.remote-service-bar select,.remote-target-toolbar select,.remote-target-toolbar input,.remote-log-insights select{
+ width:100%;min-height:35px;box-sizing:border-box;background:#111e30;border:1px solid #344966;
+ border-radius:7px;color:#e2edfa;padding:7px 10px;font-size:12px
+}
+.remote-service-bar select:focus-visible,.remote-target-toolbar select:focus-visible,
+.remote-target-toolbar input:focus-visible,.remote-log-insights select:focus-visible{outline:2px solid #60a5fa;outline-offset:2px}
+.remote-target-toolbar .btn{min-height:35px;white-space:nowrap}
+.remote-log-insights{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:12px 0 8px;color:#b6c8e0;font-size:11px}
+.remote-log-insights label{display:flex;align-items:center;gap:8px}
+.remote-log-insights select{min-width:140px}
+@media(max-width:640px){.remote-service-bar label,.remote-target-toolbar label{flex-basis:100%}.remote-log-insights label{width:100%}}
