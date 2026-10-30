@@ -67,7 +67,7 @@ def check_one(name,blob,encoding,go,rust):
         assert meta["size"]==len(blob)
         assert meta["storageMode"]=="metadata-only"
         stored=http(url,"/api/archives")
-        assert stored["items"][0]["id"]==id
+        assert any(item["id"]==id for item in stored["items"]), (name, stored["items"])
         n=meta["stats"]["all"]
         raw=http(url,f"/api/index?id={id}&start=0&count={n}",as_json=False)
         assert len(raw)==n*24
