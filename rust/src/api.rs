@@ -6,7 +6,7 @@ use rand::RngCore;
 use serde::Deserialize;
 use serde_json::{json,Value};
 use sha2::{Sha256,Digest};
-use std::{collections::HashMap,fs::{self,File},io::{Read,Seek,SeekFrom,Write},path::{Path,PathBuf},sync::{Arc,Mutex},};
+use std::{collections::HashMap,fs::{self,File},io::{Read,Seek,SeekFrom,Write},path::{Path,PathBuf},sync::{Arc,Mutex,atomic::{AtomicU64,Ordering}},time::{SystemTime,UNIX_EPOCH},};
 use tokio::net::TcpListener;
 use rust_embed::RustEmbed;
 use chrono::Utc;
@@ -14,9 +14,10 @@ use chrono::Utc;
 #[folder="../web/"]
 struct Web;
 #[derive(Clone)]
-pub struct App{pub root:PathBuf,pub host:String,jobs:Arc<Mutex<HashMap<String,Value>>>,filters:Arc<Mutex<HashMap<String,Filter>>>}
+pub struct App{pub root:PathBuf,pub host:String,pub last_ping:Arc<AtomicU64>,jobs:Arc<Mutex<HashMap<String,Value>>>,filters:Arc<Mutex<HashMap<String,Filter>>>}
 #[derive(Clone)]struct Filter{session:String,path:PathBuf,total:u64}
 fn err(code:StatusCode,text:&str)->Response{(code,Json(json!({"error":text}))).into_response()}
+fn now_sec()->u64{SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()}
 fn token()->String{let mut bytes=[0;16];rand::thread_rng().fill_bytes(&mut bytes);hex::encode(bytes)}
 fn valid_id(id:&str)->bool{(16..=48).contains(&id.len())&&id.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'-')}
 fn disk_used(root:&Path)->u64{fs::read_dir(root).ok().into_iter().flatten().filter_map(Result::ok).filter(|e|e.file_type().is_ok_and(|k|k.is_dir())&&valid_id(&e.file_name().to_string_lossy())).map(|e|["summary.json","index.bin","issues.bin"].iter().map(|f|e.path().join(f).metadata().map(|m|m.len()).unwrap_or(0)).sum::<u64>()).sum()}
@@ -44,7 +45,7 @@ pub fn new_app(host:String)->Result<App,String>{
  for d in fs::read_dir(&root).map_err(|e|e.to_string())?.flatten(){if d.file_type().is_ok_and(|k|k.is_dir())&&valid_id(&d.file_name().to_string_lossy()){
   if let Ok(items)=fs::read_dir(d.path()){for f in items.flatten(){let name=f.file_name().to_string_lossy().into_owned();if name.starts_with("filter-")&&name.ends_with(".tmp"){let _=fs::remove_file(f.path());}}}
  }}
- Ok(App{root,host,jobs:Arc::new(Mutex::new(HashMap::new())),filters:Arc::new(Mutex::new(HashMap::new()))})
+ Ok(App{root,host,last_ping:Arc::new(AtomicU64::new(now_sec())),jobs:Arc::new(Mutex::new(HashMap::new())),filters:Arc::new(Mutex::new(HashMap::new()))})
 }
 fn protect_headers(res:&mut Response){
  let h=res.headers_mut();
@@ -73,7 +74,7 @@ async fn static_file(req:Request<Body>)->Response{
  let mut res=(StatusCode::OK,[(header::CONTENT_TYPE,mime.as_ref().to_string())],a.data.to_vec()).into_response();
  if req.method()==Method::HEAD{*res.body_mut()=Body::empty()}res
 }
-async fn ping()->Response{StatusCode::NO_CONTENT.into_response()}
+async fn ping(State(app):State<App>)->Response{app.last_ping.store(now_sec(),Ordering::Relaxed);StatusCode::NO_CONTENT.into_response()}
 async fn archives(State(app):State<App>)->Json<Value>{
  let mut items=Vec::<Summary>::new();
  if let Ok(dirs)=fs::read_dir(&app.root){for d in dirs.flatten(){let id=d.file_name().to_string_lossy().into_owned();if let Ok(m)=load(&app,&id){items.push(m)}}}
@@ -206,6 +207,7 @@ async fn page_ids(State(app):State<App>,Json(q):Json<IDs>)->Response{
  Json(json!({"rows":rows})).into_response()
 }
 pub async fn serve(listener:TcpListener,app:App)->Result<(),String>{
+ let last=app.last_ping.clone();
  let routes=Router::new()
  .route("/ping",post(ping))
  .route("/api/archives",get(archives))
@@ -219,7 +221,11 @@ pub async fn serve(listener:TcpListener,app:App)->Result<(),String>{
  .route("/api/page-by-ids",post(page_ids))
  .route("/api/remote-tail",post(remote::remote_tail))
  .fallback(static_file).layer(middleware::from_fn_with_state(app.clone(),guard)).with_state(app);
- axum::serve(listener,routes).await.map_err(|e|e.to_string())
+ axum::serve(listener,routes).with_graceful_shutdown(async move{
+  loop{tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+   if now_sec().saturating_sub(last.load(Ordering::Relaxed))>180{break}
+  }
+ }).await.map_err(|e|e.to_string())
 }
 #[cfg(test)]mod tests{
  use super::*;
