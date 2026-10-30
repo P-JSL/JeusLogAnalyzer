@@ -141,7 +141,12 @@ pub async fn remote_trace(Json(q):Json<RemoteReq>)->Response{
    let final_frame=frame("done","success","DONE","조회 완료. SFTP 세션을 종료합니다.",Some(json!({"size":size,"offset":start,"data":STANDARD.encode(&data),"partial":start>0})));
    let _=tx.send(final_frame).await;
   };
-  if tokio::time::timeout(Duration::from_secs(20),run).await.is_err(){trace_send(&tx,"timeout","error","SSH_TIMEOUT","SSH/SFTP 연결 또는 조회가 20초 제한을 초과했습니다.").await}
+  tokio::select!{
+   _=tx.closed()=>{}, // Browser clicked "연결 중단": drop network future immediately.
+   result=tokio::time::timeout(Duration::from_secs(20),run)=>{
+    if result.is_err(){trace_send(&tx,"timeout","error","SSH_TIMEOUT","SSH/SFTP 연결 또는 조회가 20초 제한을 초과했습니다.").await}
+   }
+  }
  });
  let output=stream::unfold(rx,|mut r|async move{r.recv().await.map(|item|(Ok::<Bytes,Infallible>(item),r))});
  ([(header::CONTENT_TYPE,"application/x-ndjson; charset=utf-8"),(header::CACHE_CONTROL,"no-store"),(header::HeaderName::from_static("x-accel-buffering"),"no")],Body::from_stream(output)).into_response()
