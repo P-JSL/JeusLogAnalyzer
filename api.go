@@ -729,4 +729,5 @@ func (s *engine) register(mux *http.ServeMux, host string) {
 	mux.HandleFunc("/api/page", secured(s.page, false))
 	mux.HandleFunc("/api/index", secured(s.indexChunk, false))
 	mux.HandleFunc("/api/page-by-ids", secured(s.pageByIDs, true))
+	mux.HandleFunc("/api/remote-tail", secured(remoteTail, true))
 }
