@@ -1,5 +1,15 @@
 name: Verify Rust feature parity and native Windows build
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'rust/**'
+      - 'tests/rust_parity.py'
+      - 'tests/rust_windows_runtime.py'
+      - 'tests/rust_sftp_smoke.py'
+      - '.github/workflows/rust.yml'
+      - '.github/workflows/rust-release.yml'
+      - 'web/**'
   pull_request:
     paths:
       - 'rust/**'
@@ -31,9 +41,9 @@ jobs:
         working-directory: rust
         run: |
           cargo fmt
-          cargo test --all-targets -- --nocapture
-          cargo clippy --all-targets -- -D warnings
-          cargo build --release
+          cargo test --all-targets --locked -- --nocapture
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo build --release --locked
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -90,8 +100,8 @@ jobs:
       - name: Test and build independent native Rust Windows x64 application
         working-directory: rust
         run: |
-          cargo test --all-targets
-          cargo build --release
+          cargo test --all-targets --locked
+          cargo build --release --locked
           Get-Item target/release/jeus-lens-rust.exe
       - name: Real Windows EXE HTTP and browser-asset integration
         run: python tests/rust_windows_runtime.py rust/target/release/jeus-lens-rust.exe
