@@ -47,6 +47,9 @@ func remoteTrace(w http.ResponseWriter,r *http.Request){
   emit("tcp","error",code,msg);return
  }
  defer conn.Close();_=conn.SetDeadline(time.Now().Add(19*time.Second))
+ stopped:=make(chan struct{})
+ defer close(stopped)
+ go func(){select{case <-ctx.Done():_ = conn.Close();case <-stopped:}}()
  emit("tcp","success","CONNECTED","TCP 소켓 연결이 성립했습니다.")
  trusted:=false
  checkKey:=func(_ string,_ net.Addr,key ssh.PublicKey)error{
