@@ -37,3 +37,34 @@ test('non-Java stack does not claim a source location',()=>{
  const d=diagnose('[2026.10.23][0] java.sql.SQLException ORA-01013',25);
  assert.equal(d.location.kind,'log');assert.equal(d.location.sourceLine,null);
 });
+
+test('extracts MyBatis ### SQL, ### Cause, and multiple vendor/SQLSTATE markers without guessing',()=>{
+ const raw=[
+  '[2026.10.30 08:00:00][0] database access failed',
+  '### SQL: SELECT * FROM T WHERE LOT_ID = ?',
+  '### Cause: java.sql.SQLSyntaxErrorException: ORA-00942 missing table',
+  'SQLState: 42000',
+  'Caused by: java.sql.SQLException: ORA-01031 permission denied',
+  ' at com.example.Dao.run(Dao.java:137)'
+ ].join('\n');
+ const d=diagnose(raw,70);
+ assert.ok(d.evidence.some(x=>x.kind==='sql'&&x.value.includes('SELECT * FROM T')&&x.line===71));
+ assert.deepEqual(d.sqlCodes.map(x=>[x.code,x.line]),[['ORA-00942',72],['ORA-01031',74]]);
+ assert.deepEqual(d.sqlStates.map(x=>[x.code,x.line]),[['42000',73]]);
+ assert.deepEqual(d.exceptions.map(x=>x.type),['java.sql.SQLSyntaxErrorException','java.sql.SQLException']);
+ assert.equal(d.rootCause.line,74);
+ assert.equal(d.location.source,'Dao.java');
+ assert.equal(d.location.logLine,75);
+});
+test('SQL-only ### Cause is an observed cause hint, not a fabricated Java source frame',()=>{
+ const d=diagnose('### Cause: java.sql.SQLException: ORA-00001 unique constraint',42);
+ assert.equal(d.rootCause.line,42);
+ assert.equal(d.location.kind,'log');
+ assert.equal(d.sqlCodes[0].code,'ORA-00001');
+ assert.equal(d.exceptions[0].role,'SQL cause');
+});
+test('SQL evidence deduplicates observed DB codes without discarding first source line',()=>{
+ const d=diagnose('ORA-00904 invalid\nORA-00904 repeated\nPLS-00201 undeclared',10);
+ assert.deepEqual(d.sqlCodes.map(x=>x.line),[10,12]);
+ assert.deepEqual(d.sqlCodes.map(x=>x.code),['ORA-00904','PLS-00201']);
+});
