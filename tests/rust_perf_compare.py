@@ -21,7 +21,7 @@ SHORT_LOG=(b"[2026.10.23 09:00:00][0] SQLException ORA-00904 constant evidence\n
 SHORT_SOURCE=SHORT_LOG*EVENTS
 LONG_SOURCE=b"[2026.10.23 09:00:00][2] synthetic very long line\n"+b"x"*(LONG_BYTES-54)
 
-def start(binary,root):
+def launch(binary,root):
     root.mkdir(parents=True,exist_ok=True)
     env=os.environ.copy()
     env["JEUS_LENS_DATA_DIR"]=str(root)
@@ -48,7 +48,7 @@ def get_bytes(base,path):
         return response.read()
 
 def run(binary,root):
-    proc,base=start(binary,root)
+    proc,base=launch(binary,root)
     results={}
     try:
         for label,data in [("dense",SHORT_SOURCE),("long",LONG_SOURCE)]:
