@@ -2,7 +2,7 @@
 
 **JEUS 로그 분석 도구 · v1.0.2 · Windows x64**
 
-JEUS/Java 서버 로그에서 예외, Oracle SQL 오류, 발생 시각 및 관련 로그를 찾아보는 로컬 분석 프로그램입니다. 로그 원본은 파일로 복사 저장하지 않고, 검색과 분석에 필요한 메타데이터만 보관합니다.
+JEUS/Java 서버 로그에서 예외, Oracle SQL 오류, 발생 시각 및 관련 로그를 찾아보는 로컬 분석 프로그램입니다. 원격 조회 화면은 WebtoB, Tomcat, Nginx, Apache 및 일반 Linux의 텍스트 로그에도 사용할 수 있습니다. 로그 원본은 파일로 복사 저장하지 않고, 검색과 분석에 필요한 메타데이터만 보관합니다.
 
 [**최신 정식 릴리즈 다운로드**](https://github.com/P-JSL/JeusLogAnalyzer/releases/latest) · [v1.0.2 릴리즈](https://github.com/P-JSL/JeusLogAnalyzer/releases/tag/v1.0.2)
 
@@ -93,6 +93,28 @@ EXE는 **코드 서명되지 않았습니다.** 출처와 SHA-256 체크섬을 �
 5. **10초마다 새로고침**을 선택하면 새 연결로 주기적으로 조회하며, 연결 오류 시 해제됩니다. 진단 기록은 현재 브라우저에만 남으며 **진단 로그 복사 / 기록 지우기**가 가능합니다.
 
 이 기능은 **원격 파일의 끝부분 미리보기**이며, 원격 전체 로그를 자동으로 내려받거나 전체 인덱스를 만드는 기능은 아닙니다. 프로그램은 원격 명령 실행·파일 업로드·수정·삭제 기능을 제공하지 않지만, **서버 계정의 기존 권한을 변경하지는 못합니다.** 반드시 서버 측에서도 읽기 전용 권한을 설정해야 합니다. 비밀번호는 로컬 설정 파일에 저장하지 않습니다.
+
+### JEUS 이외 서버 연결: WebtoB · WAS · 웹 서버 · Linux
+
+SSH/SFTP는 **JEUS 고유 프로토콜이 아니라 해당 호스트의 일반 SSH 서비스**에 접속합니다. 따라서 다른 서버에 SFTP 접속 권한이 있다면 JEUS, WebtoB 5/6, Tomcat/JBoss, Spring Boot, Nginx, Apache HTTP Server, 일반 Linux 서버를 같은 화면에서 조회할 수 있습니다. **WebtoB HTTP 포트나 JEUS 관리 포트에 직접 접속하는 기능은 아닙니다.**
+
+1. **서버/미들웨어 유형**을 선택하면 그 서버의 대표적인 로그 파일명과 경로 *예시*를 확인할 수 있습니다. 경로는 자동 결정되지 않으며 실제 서버 설정에서 확인해 **절대경로**로 입력해야 합니다.
+2. 하나의 브라우저 세션에 최대 15개의 **접속 대상**을 추가·선택·삭제할 수 있습니다. 저장되는 항목은 서버명, 종류, 주소, 포트, 사용자명, 호스트키 지문, 파일 경로, 인코딩이며 **비밀번호는 저장되지 않습니다**. 세션을 종료하면 접속 대상 목록도 사라집니다.
+3. 읽은 로그에서는 **최근 최대 512KiB 구간만** 화면에 표시합니다. WebtoB·Apache·Nginx의 일반적인 access 로그 형식은 HTTP 요청과 4xx·5xx 상태 수를, 그 외 텍스트는 ERROR/FATAL/WARN 등의 단어를 참고해 간략 집계합니다. 진단 확정이나 파일 전체 분석이 아닙니다.
+4. 미리보기에서 **전체 / 오류·5xx / 경고·4xx / HTTP 요청** 표시 필터를 선택할 수 있습니다. 파일 원본을 수정하거나 서버에서 검색 명령을 실행하지 않습니다.
+
+| 서버 유형 | 일반적인 로그 파일명 예시 |
+|---|---|
+| JEUS | `JeusServer.log`, `server.log.1` |
+| WebtoB 5 Fix#4 | `access_20261030.log`, `error_20261030.log`, `system_20261030.log` |
+| WebtoB 6 | `webtob_access.log`, `webtob_error.log`, `webtob_system.log` |
+| Tomcat / JBoss / Java | `catalina.out`, `server.log`, `gc.log.0.current` |
+| Nginx / Apache | `access.log`, `error.log`, `access_log`, `error_log` |
+| Linux | `syslog`, `messages`, `secure`, `auth.log` |
+
+텍스트 로그(`.log`, `.out`, `.txt`, `.trace`, `.err`, `.error`, `.audit`, `.jsonl`, `.ndjson`) 및 날짜·숫자 회전 파일을 지원합니다. `.gz`, `.zip` 등 압축 아카이브, 디렉터리, 심볼릭 링크, 임의의 시스템 파일은 조회를 제한합니다. 운영체제의 journald 전용 로그는 파일로 수집된 경우에만 읽을 수 있으며 `journalctl` 등의 명령은 실행하지 않습니다.
+
+WebtoB 로그 형식 참고: [WebtoB 5 Fix#4 관리 안내서](https://docs.tmaxsoft.com/en/webtob/5_fix4/administrator-guide/chapter-expand-configuration.html), [WebtoB 6 LOGGING 설정](https://docs.tmaxsoft.com/ko/webtob/6/administrator-guide/configuration-logging.html). 실제 LOGGING 항목에 따라 파일 경로와 로그 형식은 달라집니다.
 
 ## 6. 자동 업데이트
 
