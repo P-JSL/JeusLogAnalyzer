@@ -122,10 +122,9 @@ pub struct Hotspot{pub start:String,pub all:u64,pub errors:u64,pub warnings:u64,
 #[derive(Serialize,Deserialize,Clone,Debug)]
 #[serde(rename_all="camelCase")]
 pub struct Surge{pub start:String,pub errors:u64,pub all:u64,pub baseline_errors:u64,pub baseline_all:u64,pub first_error_event:i64,pub last_error_event:i64}
+fn is_false(value:&bool)->bool{!*value}
 #[derive(Serialize,Deserialize,Clone,Debug,Default)]
 #[serde(rename_all="camelCase")]
-fn is_false(value:&bool)->bool{!*value}
-#[allow(clippy::struct_excessive_bools)]
 pub struct Summary{
  #[serde(default)]pub source_hash:String,#[serde(default)]pub storage_mode:String,#[serde(default)]pub metadata_bytes:u64,
  #[serde(default)]pub id:String,#[serde(default)]pub name:String,#[serde(default)]pub size:u64,#[serde(default)]pub encoding:String,
