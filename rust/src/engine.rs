@@ -250,7 +250,7 @@ impl Indexer{
    // O(min(line_length, 64 KiB)) copying and allocation.
    let mut remaining=bytes;
    while !remaining.is_empty(){
-    let take=remaining.iter().position(|&byte|byte==b'\\n').map_or(remaining.len(),|n|n+1);
+    let take=remaining.iter().position(|&byte|byte==b'\n').map_or(remaining.len(),|n|n+1);
     let part=&remaining[..take];
     self.offset+=take as u64;
     self.carry_len+=take as u64;
@@ -258,7 +258,7 @@ impl Indexer{
      let keep=(65536-self.carry.len()).min(part.len());
      self.carry.extend_from_slice(&part[..keep]);
     }
-    if part.last()==Some(&b'\\n'){self.line_done()?}
+    if part.last()==Some(&b'\n'){self.line_done()?}
     remaining=&remaining[take..];
    }
   }
