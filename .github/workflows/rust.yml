@@ -7,6 +7,7 @@ on:
       - 'tests/rust_parity.py'
       - 'tests/rust_windows_runtime.py'
       - 'tests/rust_sftp_smoke.py'
+      - 'tests/rust_large_stream.py'
       - '.github/workflows/rust.yml'
       - '.github/workflows/rust-release.yml'
       - 'web/**'
@@ -16,6 +17,7 @@ on:
       - 'tests/rust_parity.py'
       - 'tests/rust_windows_runtime.py'
       - 'tests/rust_sftp_smoke.py'
+      - 'tests/rust_large_stream.py'
       - '.github/workflows/rust.yml'
       - 'web/**'
   workflow_dispatch:
@@ -51,6 +53,8 @@ jobs:
         run: |
           go build -o /tmp/jeus-go .
           python3 tests/rust_parity.py /tmp/jeus-go rust/target/release/jeus-lens-rust
+      - name: Go/Rust exact 1GiB streaming and binary-index parity
+        run: timeout 1200s python3 tests/rust_large_stream.py /tmp/jeus-go rust/target/release/jeus-lens-rust
       - name: SFTP real localhost server protocol and read-only integration
         run: |
           sudo apt-get update -qq
