@@ -68,7 +68,7 @@
         }else for(const [k,v] of splitBindings(val).entries())add('bind','bind['+(k+1)+']',v,i);
       }
       // Named inputs from the same event. Do not infer database values that were not logged.
-      if(!fm && !/^\s*(?:Caused by|Suppressed)\b/.test(line) && !sm){
+      if(!fm && !/^\s*(?:(?:Caused by|Suppressed)\b|#{3}\s*Cause\s*:|SQL\s*STATE\s*[:=])/i.test(line) && !sm){
         const fieldLine=line.replace(/^\s*(?:Payload|Data|Request|Params?|Context|Input)\s*[:=]\s*(?=[\w.-]+\s*[:=])/i,'');
         FIELD.lastIndex=0;
         for(const m of fieldLine.matchAll(FIELD)){
