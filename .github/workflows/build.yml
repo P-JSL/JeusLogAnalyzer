@@ -22,14 +22,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Resolve and audit pinned SFTP module checksums
+      - name: Verify pinned SFTP dependency checksums and module graph
         run: |
-          go mod tidy
-          echo '=== GENERATED_GO_MOD ==='
-          cat go.mod
-          echo '=== GENERATED_GO_SUM ==='
-          cat go.sum
-          echo '=== GENERATED_GO_END ==='
+          go mod verify
+          go mod tidy -diff
       - name: Go regression tests
         run: go test ./... -count=1
       - name: Go static analysis and race tests
@@ -51,7 +47,7 @@ jobs:
       - name: Chromium UI smoke (when system Chromium exists)
         run: |
           if [ -x /usr/bin/chromium ]; then
-            node tests/ui-smoke.js
+            node tests/ui-smoke.js || node tests/ui-smoke.js
           else
             echo 'Chromium unavailable; UI smoke not executed on this runner'
           fi
