@@ -155,7 +155,7 @@ fn last_class(s:&str)->String{s.rsplit('.').next().unwrap_or(s).to_owned()}
 #[derive(Default,Clone)]
 struct Event{offset:u64,line:u32,end:u32,explicit:u8,failure:bool,suspect:bool,sql:bool,message:String,signature:String,sql_class:String,code:String,event_code:String,subtype:u8,clock:String,minute:String,root_class:String,frame:String}
 pub struct Indexer{
- encoding:String,dir:std::path::PathBuf,idx:BufWriter<File>,issue:BufWriter<File>,carry:Vec<u8>,carry_len:u64,offset:u64,line:u32,event:Option<Event>,pub summary:Summary,
+ encoding:String,dir:std::path::PathBuf,idx:BufWriter<File>,issue:BufWriter<File>,carry:Vec<u8>,carry_len:u64,offset:u64,line_start:u64,previous:u8,line:u32,event:Option<Event>,pub summary:Summary,
  top:HashMap<String,u64>,sql_top:HashMap<String,u64>,types:HashMap<String,u64>,hourly:HashMap<String,u64>,hotspots:HashMap<String,Hotspot>,issues:HashMap<u64,Issue>,limited:bool
 }
 impl Indexer{
@@ -163,7 +163,7 @@ impl Indexer{
   fs::create_dir_all(path).map_err(|e|e.to_string())?;
   let idx=BufWriter::with_capacity(1024*1024,File::create(path.join("index.part")).map_err(|e|e.to_string())?);
   let issue=BufWriter::with_capacity(256*1024,File::create(path.join("issues.part")).map_err(|e|e.to_string())?);
-  Ok(Self{encoding:encoding.into(),dir:path.to_owned(),idx,issue,carry:Vec::with_capacity(2048),carry_len:0,offset:0,line:0,event:None,summary:Summary{encoding:encoding.into(),indexed:true,issue_version:1,..Default::default()},top:HashMap::new(),sql_top:HashMap::new(),types:HashMap::new(),hourly:HashMap::new(),hotspots:HashMap::new(),issues:HashMap::new(),limited:false})
+  Ok(Self{encoding:encoding.into(),dir:path.to_owned(),idx,issue,carry:Vec::with_capacity(2048),carry_len:0,offset:0,line_start:0,previous:0,line:0,event:None,summary:Summary{encoding:encoding.into(),indexed:true,issue_version:1,..Default::default()},top:HashMap::new(),sql_top:HashMap::new(),types:HashMap::new(),hourly:HashMap::new(),hotspots:HashMap::new(),issues:HashMap::new(),limited:false})
  }
  fn finish_event(&mut self)->Result<(),String>{
   let Some(st)=self.event.take()else{return Ok(())};
@@ -206,8 +206,13 @@ impl Indexer{
   let sample=clean.get(..clean.len().min(1024)).unwrap_or(clean);
   let (hdr,lev,msg,event_code)=header(sample);
   let new_event=hdr||self.event.is_none()||self.event.as_ref().is_some_and(|v|v.explicit==0&&!clean.starts_with([' ','\t'])&&!clean.trim().is_empty()&&!re(CONT).is_match(clean));
-  if new_event{self.finish_event()?;let (clock,minute)=if hdr{clock_and_bucket(clean)}else{(String::new(),String::new())};
-   self.event=Some(Event{offset:self.offset,line:self.line,end:self.line,explicit:lev,message:if msg.is_empty(){clean.into()}else{msg},event_code,clock,minute,..Default::default()});}
+  if new_event{
+   // A new header begins at the start of the current line, not at its end.
+   // The incoming bytes have already advanced offset to the next line.
+   let after_line=self.offset;self.offset=self.line_start;
+   let flushed=self.finish_event();self.offset=after_line;flushed?;
+   let (clock,minute)=if hdr{clock_and_bucket(clean)}else{(String::new(),String::new())};
+   self.event=Some(Event{offset:self.line_start,line:self.line,end:self.line,explicit:lev,message:if msg.is_empty(){clean.into()}else{msg},event_code,clock,minute,..Default::default()});}
   else if let Some(v)=self.event.as_mut(){v.end=self.line}
   if let Some(v)=self.event.as_mut(){
    if sql_signal(clean){v.sql=true;let t=sql_type(clean);if t!=0&&(v.subtype==0||v.subtype==8){v.subtype=t}
@@ -223,7 +228,7 @@ impl Indexer{
      else if let Some(x)=find(EX,clean){last_class(x)}else{"기타 오류".into()};
    }
   }
-  self.carry.clear();self.carry_len=0;Ok(())
+  self.carry.clear();self.carry_len=0;self.line_start=self.offset;Ok(())
  }
  pub fn feed(&mut self,bytes:&[u8])->Result<(),String>{
   // Scan complete byte segments without retaining a raw log. Preserve exact byte offsets.
@@ -231,9 +236,12 @@ impl Indexer{
    for &b in bytes{self.offset+=1;self.carry_len+=1;
     if self.carry.len()<65536{self.carry.push(b)}
     if self.carry_len%2==0{
-     let newline=if self.carry.len()>=2{let len=self.carry.len();if self.encoding=="utf-16le"{self.carry[len-2..]==[10,0]}else{self.carry[len-2..]==[0,10]}}else{false};
+     // Use the previous byte, not the bounded 64 KiB prefix: a newline
+     // following a huge UTF-16 line must still terminate that line.
+     let newline=if self.encoding=="utf-16le"{self.previous==10&&b==0}else{self.previous==0&&b==10};
      if newline{self.line_done()?}
     }
+    self.previous=b;
    }
   }else{
    for &b in bytes{self.offset+=1;self.carry_len+=1;if self.carry.len()<65536{self.carry.push(b)}if b==10{self.line_done()?}}
