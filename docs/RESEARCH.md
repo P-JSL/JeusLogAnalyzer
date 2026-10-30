@@ -106,3 +106,20 @@
 - https://sre.google/workbook/alerting-on-slos/
 
 최대 1GiB 입력 스트리밍과 32B/이벤트 인덱스는 유지합니다. 급증 판단은 요약 수치만 추가 저장하며, 근본 원인 분석·임의 데이터베이스 조회·미확인 과거 데이터 보정은 하지 않습니다.
+
+## 2026-10-30: 상용 오류 상세 분석 기능 재검토 및 v6.4.0 선택
+
+| 제품 | 공식 기능 | 본 로컬 단일 파일 분석기의 반영 |
+|---|---|---|
+| Datadog Error Tracking | 서비스·오류 유형·메시지·유의미한 스택 프레임 기반 그룹화, 에러 속성의 근거 추적 | 기존 구조적 그룹을 유지하고 **이벤트 내 예외 종류·코드·발견 행**을 상세 패널에 추가. 서비스별 추적/영향 사용자 계산은 미지원 |
+| Elastic Observability Logs | 비정형 로그의 패턴 분류와 차트, 시계열 기반 이상 구간 탐색 | 기존 5분 집계/급증 보조 지표 유지. 새로운 ML 추론이나 패턴 학습 도입하지 않음 |
+| Graylog Event Definitions | 필터·집계 기반 이벤트 및 시간 순서에 따른 상관관계 규칙 | 단일 파일에서 확인 가능한 예외 단계만 표시. 서버 간 상관관계나 자동 인시던트 판정 미구현 |
+| Splunk 검색·집계 | 원본 이벤트의 필드/시간 기준 검색 및 탐색 | 사용자 브라우저 원본 파일 검색 경로에서 메타데이터 인덱스 요청량만 최적화. Splunk SPL 엔진 자체는 미구현 |
+
+공식 참고 자료:
+- https://docs.datadoghq.com/logs/error_tracking/error_grouping/
+- https://docs.datadoghq.com/logs/explorer/analytics/patterns/
+- https://www.elastic.co/docs/solutions/observability/logs/run-pattern-analysis-on-log-data
+- https://go2docs.graylog.org/current/interacting_with_your_log_data/event_definitions.html
+
+**실제 코드 반영:** `web/diagnostics.js` 및 `web/app.js`에서 SQL 오류 근거의 라인 단위 표시를 추가하고 `web/search-worker.js`에서 16,000건/요청으로 디스크 인덱스 HTTP 조회 횟수를 줄였습니다. 메모리에 보관하는 디스크 인덱스 구조는 그대로이며 실제 운영 로그 정확도, Windows 실행 속도 및 상용 제품과의 상대 벤치마크는 수행하지 않았습니다.
