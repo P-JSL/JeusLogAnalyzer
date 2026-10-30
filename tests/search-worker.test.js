@@ -20,3 +20,9 @@ test('Search UTF-8 Korean token crossing a 256KiB chunk boundary of one large ev
  const result=await runSearch([{text:content,level:1,category:1,subtype:1}],'SQL 오류 발생','sql:1');
  assert.equal(result.type,'complete');assert.equal(result.totalMatches,1);
 });
+
+test('review filter matches metadata bit 23 without escalating INFO level',async()=>{
+ const events=[{text:'ORA-12899 INFO evidence',level:3,category:1,subtype:8,review:1},{text:'INFO normal',level:3,category:0,review:0},{text:'ERROR',level:1,category:0,review:0}];
+ const filtered=await runSearch(events,'ORA-12899','review');
+ assert.equal(filtered.type,'complete');assert.deepEqual(Array.from(filtered.indices),[0]);
+});
