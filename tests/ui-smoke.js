@@ -70,6 +70,9 @@ await js(`showDetail({index:0,line:51,endLine:55,level:'error',category:'sql',ti
 assert.match(await js(`document.querySelector('#faultLocation').textContent`),/Db.java:87/);
 assert.match(await js(`document.querySelector('#faultData').textContent`),/0044-26-0072/);
 assert.match(await js(`document.querySelector('#faultData').textContent`),/INSERT INTO T/);
+assert.match(await js(`document.querySelector('#faultChain').textContent`),/SQLException/);
+assert.match(await js(`document.querySelector('#faultChain').textContent`),/ORA-00001/);
+assert.ok((await js(`document.querySelectorAll('#faultChain button.neighbor').length`))>=2);
 assert.equal(await js(`document.querySelector('#detailRaw .fault-highlight').dataset.logLine`),'55');
 assert.ok((await js(`document.querySelectorAll('#hourlyChart .hour-item').length`))>0);
 await js(`(()=>{const m={...window.mockSummary,hourly:Array.from({length:28},(_,i)=>({name:'2026.10.23 '+String(i).padStart(2,'0'),count:i+1}))};showSummary(m)})()`);
