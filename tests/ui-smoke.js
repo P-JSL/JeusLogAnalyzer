@@ -38,6 +38,10 @@ window.fetch=async function(input,opts={}){
   if(route==='/api/page-by-ids'){const req=JSON.parse(opts.body);return message({rows:req.indices.map(i=>window.mockRows[i])})}
   if(route==='/api/delete'){window.mockImported=false;return message({deleted:true})}
   if(route==='/api/status')return message({stage:'complete',indexed:window.mockSummary.size,size:window.mockSummary.size});
+  if(route==='/api/remote-trace'){window.remoteRequest=JSON.parse(opts.body);const stages=window.mockRemoteFails?
+    [{stage:'tcp',level:'info',code:'CONNECTING',message:'연결 시도'},{stage:'ssh',level:'error',code:'AUTH_FAILED',message:'사용자 인증 실패'}]:
+    [{stage:'tcp',level:'info',code:'CONNECTING',message:'연결 시도'},{stage:'auth',level:'success',code:'AUTHENTICATED',message:'계정 인증 완료'},{stage:'done',level:'success',code:'DONE',message:'종료',size:15,offset:0,data:btoa('REMOTE LOG SAFE'),partial:false}];
+    return new Response(stages.map(x=>JSON.stringify(x)).join(String.fromCharCode(10))+String.fromCharCode(10),{status:200,headers:{'Content-Type':'application/x-ndjson'}})}
   if(route==='/api/remote-tail'){window.remoteRequest=JSON.parse(opts.body);return message({size:15,offset:0,data:btoa('REMOTE LOG SAFE'),partial:false})}
   throw Error('unknown mock route: '+route);
 };
@@ -99,6 +103,14 @@ await js(`(()=>{document.querySelector('#remoteHost').value='127.0.0.1';document
 await until(()=>js(`document.querySelector('#remoteOutput').textContent.includes('REMOTE LOG SAFE')`));
 assert.equal(await js(`window.remoteRequest.maxBytes`),524288);
 assert.equal(await js(`window.remoteRequest.path`),'/logs/server.log');
+assert.match(await js(`document.querySelector('#remoteTraceOutput').textContent`),/계정 인증 완료/);
+await js(`document.querySelector('#remoteTabTrace').click()`);
+assert.equal(await js(`document.querySelector('#remoteTabTrace').getAttribute('aria-selected')`),'true');
+await js(`(()=>{window.mockRemoteFails=true;document.querySelector('#remoteConnect').click()})()`);
+await until(()=>js(`document.querySelector('#remoteStatus').textContent.includes('AUTH_FAILED')`));
+assert.match(await js(`document.querySelector('#remoteTraceOutput').textContent`),/사용자 인증 실패/);
+await js(`window.mockRemoteFails=false`);
+
 if(captureDocs)await js(`(()=>{document.querySelector('#remoteHost').value='';document.querySelector('#remoteUser').value='';document.querySelector('#remotePass').value='';document.querySelector('#remoteFingerprint').value='';document.querySelector('#remotePath').value='';document.querySelector('#remoteOutput').textContent='';document.querySelector('#remoteStatus').textContent='서버 호스트키를 확인하고 읽기 전용 계정으로 접속합니다.';})()`);
 await saveDocsScreenshot('04-remote-sftp.png','.remote-panel');
 await call('Emulation.setDeviceMetricsOverride',{width:1480,height:1050,deviceScaleFactor:1,mobile:false});
