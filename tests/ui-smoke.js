@@ -113,6 +113,7 @@ assert.equal(await js(`document.querySelector('#remoteTabTrace').getAttribute('a
 await js(`(()=>{window.mockRemoteFails=true;document.querySelector('#remoteConnect').click()})()`);
 await until(()=>js(`document.querySelector('#remoteStatus').textContent.includes('AUTH_FAILED')`));
 assert.match(await js(`document.querySelector('#remoteTraceOutput').textContent`),/사용자 인증 실패/);
+assert.equal(await js(`document.querySelector('#remoteOutput').textContent`),'','failed remote refresh must clear old content');
 await js(`window.mockRemoteFails=false`);
 await js(`(()=>{window.mockRemoteHang=true;document.querySelector('#remoteConnect').click()})()`);
 await until(()=>js(`document.querySelector('#remoteDisconnect').disabled===false`));
@@ -139,6 +140,18 @@ assert.match(await js(`document.querySelector('#remoteLogSummary').textContent`)
 await js(`(()=>{document.querySelector('#remoteLineFilter').value='error';document.querySelector('#remoteLineFilter').dispatchEvent(new Event('change'))})()`);
 assert.match(await js(`document.querySelector('#remoteOutput').textContent`),/POST \/v1/);
 assert.doesNotMatch(await js(`document.querySelector('#remoteOutput').textContent`),/GET \/health/);
+ // Explicit file type controls HTTP classification; JEUS numeric 0/1 are errors/warnings.
+await js(`(()=>{window.mockRemoteText=['[2026.10.30 12:30:00][0] [ms1-1] [SERVER-0100] crashed','[2026.10.30 12:30:01][1] [ms1-1] [SERVER-0101] slow','127.0.0.1 [30/Oct/2026:12:30:02 +0900] "GET /health HTTP/1.1" 500 0'].join('\\n');document.querySelector('#remoteLineFilter').value='all';document.querySelector('#remoteLogKind').value='app';document.querySelector('#remoteLogKind').dispatchEvent(new Event('change'));document.querySelector('#remoteConnect').click()})()`);
+await until(()=>js(`document.querySelector('#remoteLogSummary').textContent.includes('HTTP 분석 제외')`));
+assert.match(await js(`document.querySelector('#remoteLogSummary').textContent`),/오류 1 · 경고 1/);
+await js(`(()=>{document.querySelector('#remoteLogKind').value='access';document.querySelector('#remoteLogKind').dispatchEvent(new Event('change'))})()`);
+assert.match(await js(`document.querySelector('#remoteLogSummary').textContent`),/5xx 1/);
+await js(`(()=>{window.mockRemoteText='[2026/10/30 12:30:00] WebtoB ERROR request failed\\n[2026/10/30 12:30:01] WebtoB system start';document.querySelector('#remoteLogKind').value='error';document.querySelector('#remoteConnect').click()})()`);
+await until(()=>js(`document.querySelector('#remoteLogSummary').textContent.includes('최근 구간 2행')`));
+assert.match(await js(`document.querySelector('#remoteLogSummary').textContent`),/오류 1 · 경고 0/);
+assert.match(await js(`document.querySelector('#remoteLogSummary').textContent`),/HTTP 분석 제외/);
+await js(`(()=>{document.querySelector('#remoteHost').value='192.0.2.2';document.querySelector('#remoteHost').dispatchEvent(new Event('change'))})()`);
+assert.equal(await js(`document.querySelector('#remoteOutput').textContent`),'');
 await js(`(()=>{document.querySelector('#remoteTargetRemove').click();document.querySelector('#remoteLineFilter').value='all';window.mockRemoteText=''})()`);
 assert.equal(await js(`document.querySelector('#remoteTargetList').options.length`),2);
 // End generalized remote preview and ephemeral session tests.

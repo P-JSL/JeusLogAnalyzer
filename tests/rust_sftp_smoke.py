@@ -95,6 +95,10 @@ def main():
             # account and read-only protocol must work for all text-log names.
             middleware_fixtures={
                 "access_20261030.log": b'10.0.0.1 [30/Oct/2026:12:30:00 +0900] "GET / HTTP/1.1" 200 123\\n',
+                "webtob_access.log": b'10.0.0.1 [30/Oct/2026:12:30:00 +0900] "POST /api HTTP/1.1" 503 0\\n',
+                "webtob_error.log": b'[2026/10/30 12:30:00] WebtoB ERROR service unavailable\\n',
+                "webtob_system.log": b'[2026/10/30 12:30:01] WebtoB system restart\\n',
+                "JeusServer.log": b'[2026.10.30 12:30:00][0] [ms1-1] [SERVER-0100] failure\\n[2026.10.30 12:30:01][1] [ms1-1] [SERVER-0101] warning\\n',
                 "error_20261030.log": b'[2026/10/30 12:30] WebtoB ERROR request failed\\n',
                 "system_20261030.log": b'[2026/10/30 12:30] WebtoB system start\\n',
                 "access_log": b'192.168.0.1 - - [30/Oct/2026:12:30:00 +0900] "GET / HTTP/1.1" 404 0\\n',
@@ -116,6 +120,12 @@ def main():
                     assert location.read_bytes()==content,filename
                 finally:
                     location.unlink()
+            # Bad hostnames must be rejected before SSH, identically for Go and Rust.
+            for bad_host in ("-bad", "bad:host", "bad_name", "bad host"):
+                status,res=post(base,{**q,"host":bad_host})
+                assert status==400,(bad_host,status,res)
+                events=trace(base,{**q,"host":bad_host})
+                assert events[-1].get("code")=="INVALID_CONFIG",(bad_host,events)
             for filename in ("server.log.gz","server.log.1.gz","private.conf","../etc/server.log"):
                 query={**q,"path":str(pathlib.Path(log_path).parent / filename)}
                 status,res=post(base,query)
