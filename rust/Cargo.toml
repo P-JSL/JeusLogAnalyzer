@@ -4,7 +4,6 @@ version = "1.0.0"
 edition = "2021"
 rust-version = "1.85"
 description = "Independent native Rust backend for JEUS Lens"
-license = "MIT"
 
 [dependencies]
 axum = { version = "0.8", features = ["http1", "json"] }
