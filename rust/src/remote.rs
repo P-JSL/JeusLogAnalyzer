@@ -104,13 +104,28 @@ pub async fn remote_trace(Json(q):Json<RemoteReq>)->Response{
   if let Err(e)=check(&q){trace_send(&tx,"validate","error","INVALID_CONFIG",&e).await;return}
   trace_send(&tx,"validate","success","VALID","서버·계정·경로·호스트키 지문 입력값을 검증했습니다.").await;
   let run=async{
-   trace_send(&tx,"tcp","info","CONNECTING","호스트 이름 확인과 SSH/TCP 연결 및 키 교환을 시도합니다.").await;
+   trace_send(&tx,"dns","info","RESOLVING","서버 호스트 이름 및 연결 주소를 확인합니다.").await;
+   if tokio::net::lookup_host((q.host.as_str(),q.port)).await.is_err(){
+    trace_send(&tx,"dns","error","DNS_FAILURE","서버 이름을 확인할 수 없습니다. DNS와 SSH 호스트 주소를 확인하세요.").await;
+    return
+   }
+   trace_send(&tx,"tcp","info","CONNECTING","SSH/TCP 연결 및 키 교환을 시도합니다.").await;
    let mismatch=Arc::new(AtomicBool::new(false));
    let handler=TraceHost{pin:q.fingerprint.clone(),tx:tx.clone(),mismatch:mismatch.clone()};
    let mut ssh=match client::connect(Arc::new(client::Config{nodelay:true,..Default::default()}),(q.host.as_str(),q.port),handler).await{
-    Ok(v)=>v,Err(_)=>{
+    Ok(v)=>v,Err(err)=>{
      if !mismatch.load(Ordering::Relaxed){
-      trace_send(&tx,"tcp","error","SSH_CONNECT","SSH/TCP 연결 실패. DNS, 포트, 방화벽, 서버 가용성 또는 SSH 알고리즘을 확인하세요.").await;
+      let detail=err.to_string().to_ascii_lowercase();
+      let (code,message)=if detail.contains("refused"){
+       ("TCP_REFUSED","서버가 TCP 연결을 거부했습니다. SSH 포트 및 서버 실행 여부를 확인하세요.")
+      }else if detail.contains("timed out")||detail.contains("timeout"){
+       ("TCP_TIMEOUT","SSH/TCP 연결 시간이 초과됐습니다. 방화벽·네트워크 상태를 확인하세요.")
+      }else if detail.contains("network is unreachable")||detail.contains("no route"){
+       ("NETWORK_UNREACHABLE","서버로 연결할 네트워크 경로가 없습니다.")
+      }else{
+       ("SSH_CONNECT","SSH/TCP 연결 또는 SSH 협상에 실패했습니다. 포트·서버·SSH 알고리즘을 확인하세요.")
+      };
+      trace_send(&tx,"tcp","error",code,message).await;
      }
      return
     }
