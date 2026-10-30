@@ -91,6 +91,37 @@ def main():
             status,data=post(base,{**q,"path":symlink})
             assert status!=200,(status,data)
             assert pathlib.Path(log_path).read_bytes()==expected
+            # Each path represents a different middleware; same pinned SSH/SFTP
+            # account and read-only protocol must work for all text-log names.
+            middleware_fixtures={
+                "access_20261030.log": b'10.0.0.1 [30/Oct/2026:12:30:00 +0900] "GET / HTTP/1.1" 200 123\\n',
+                "error_20261030.log": b'[2026/10/30 12:30] WebtoB ERROR request failed\\n',
+                "system_20261030.log": b'[2026/10/30 12:30] WebtoB system start\\n',
+                "access_log": b'192.168.0.1 - - [30/Oct/2026:12:30:00 +0900] "GET / HTTP/1.1" 404 0\\n',
+                "syslog": b'Oct 30 12:30:00 host app[123]: warning\\n',
+                "catalina.out": b'30-Oct-2026 12:30:00.123 SEVERE Tomcat startup failure\\n',
+                "gc.log.0.current": b'[0.100s][info][gc] Synthetic GC event\\n'
+            }
+            for filename,content in middleware_fixtures.items():
+                location=pathlib.Path(log_path).parent / filename
+                assert not location.exists(),location
+                location.write_bytes(content)
+                try:
+                    query={**q,"path":str(location)}
+                    status,res=post(base,query)
+                    assert status==200,(filename,status,res)
+                    assert base64.b64decode(res["data"])==content[-512:],filename
+                    stage_list=trace(base,query)
+                    assert any(row.get("code")=="DONE" for row in stage_list),(filename,stage_list)
+                    assert location.read_bytes()==content,filename
+                finally:
+                    location.unlink()
+            for filename in ("server.log.gz","server.log.1.gz","private.conf","../etc/server.log"):
+                query={**q,"path":str(pathlib.Path(log_path).parent / filename)}
+                status,res=post(base,query)
+                assert status==400,(filename,status,res)
+                events=trace(base,query)
+                assert events[-1].get("code")=="INVALID_CONFIG",(filename,events)
             # File rotation between polls must pick up the new file on the next read.
             old=pathlib.Path(log_path)
             rotated=old.with_name(old.name+".1")
