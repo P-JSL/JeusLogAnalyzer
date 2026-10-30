@@ -90,3 +90,18 @@ button.issue-item:hover,button.issue-item:focus-visible{background:#263954;borde
 .remote-output{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;max-height:310px;overflow:auto;background:#0e1420;border:1px solid #263449;border-radius:8px;margin:12px 0 9px;padding:14px;color:#cdd9ec;line-height:1.65}
 .remote-output:empty{display:none}
 @media(max-width:1090px){.remote-fields{grid-template-columns:1fr 1fr}.remote-fields label.remote-wide{grid-column:span 2}}
+
+/* Read-only live SSH diagnostics; never persist raw session traces. */
+.remote-tabbar{display:flex;gap:8px;margin-top:15px;border-bottom:1px solid #344562;padding-bottom:10px}
+.remote-tabbar button{padding:8px 13px;background:transparent;border:1px solid #344562;border-radius:7px;color:#91a6c1;cursor:pointer}
+.remote-tabbar button[aria-selected="true"]{background:#253951;border-color:#4c80b2;color:#e5f2ff;font-weight:700}
+.remote-tabbar button span{font-variant-numeric:tabular-nums;font-size:10px;padding:2px 6px;border-radius:8px;background:#26374b}
+.remote-trace-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px;font-size:11px;color:#9db0cc}
+.remote-trace-head button{padding:6px 10px}
+.remote-trace-output{height:245px;overflow:auto;border:1px solid #263449;border-radius:8px;background:#0a121d;padding:14px;margin-top:10px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;line-height:1.7;color:#b2c6dc;white-space:pre-wrap;overflow-wrap:anywhere}
+.remote-trace-line{padding:3px 4px;border-bottom:1px solid #18263b}
+.remote-trace-key{color:#8eafda}
+.remote-trace-success{color:#b0dbb9}
+.remote-trace-error{color:#ffb9b9;background:#372029}
+.remote-trace-error .remote-trace-key{color:#ff8e95}
+.remote-panel .btn:disabled{opacity:.45;cursor:not-allowed}
