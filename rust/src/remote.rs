@@ -168,5 +168,27 @@ pub async fn remote_trace(Json(q):Json<RemoteReq>)->Response{
 
 #[cfg(test)]mod tests{
  use super::*;
+ #[test]fn portable_log_filenames_match_go(){
+  let base=RemoteReq{host:"127.0.0.1".into(),port:22,user:"readonly".into(),password:"test".into(),fingerprint:format!("SHA256:{}", "A".repeat(43)),path:"/logs/server.log".into(),max_bytes:512*1024};
+  for filename in [
+   "/opt/jeus/logs/JeusServer.log","/opt/webtob/log/access_20261030.log",
+   "/opt/webtob/log/error_20261030.log","/opt/webtob/log/system_20261030.log",
+   "/opt/webtob/webtob_system.log","/var/log/nginx/access.log.1",
+   "/var/log/httpd/access_log","/var/log/httpd/error_log.2","/var/log/syslog",
+   "/var/log/messages.1","/opt/tomcat/logs/catalina.out",
+   "/opt/apps/gc.log.0.current","/opt/apps/access.log-2026-10-30",
+   "/opt/apps/server.jsonl"
+  ]{
+   let mut q=base.clone();q.path=filename.into();assert!(check(&q).is_ok(),"rejects {filename}");
+  }
+  for filename in [
+   "/etc/shadow","/etc/passwd","/var/log/archive.tar.gz",
+   "/var/log/server.log.gz","/var/log/server.log.1.gz",
+   "/var/log/server.zip","/var/log/../etc/server.log",
+   "/var/log//server.log","relative/access_log"
+  ]{
+   let mut q=base.clone();q.path=filename.into();assert!(check(&q).is_err(),"allows {filename}");
+  }
+ }
  #[test]fn deny_unsafe_remote(){let mut q=RemoteReq{host:"127.0.0.1".into(),port:22,user:"readonly".into(),password:"test".into(),fingerprint:format!("SHA256:{}", "A".repeat(43)),path:"/logs/server.log".into(),max_bytes:512*1024};assert!(check(&q).is_ok());q.path="/etc/../shadow.log".into();assert!(check(&q).is_err());q.path="/logs/server.log".into();q.fingerprint.clear();assert!(check(&q).is_err());q.fingerprint=format!("SHA256:{}", "A".repeat(43));q.max_bytes=1<<30;assert!(check(&q).is_err());}
 }
