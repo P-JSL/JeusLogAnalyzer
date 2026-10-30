@@ -6,6 +6,8 @@ JEUS/Java 서버 로그에서 예외, Oracle SQL 오류, 발생 시각 및 관�
 
 [**최신 정식 릴리즈 다운로드**](https://github.com/P-JSL/JeusLogAnalyzer/releases/latest) · [v1.0.0 릴리즈](https://github.com/P-JSL/JeusLogAnalyzer/releases/tag/v1.0.0)
 
+**Windows 실행 파일은 Go 원본판과 Rust 백엔드판으로 구분됩니다.** Rust판은 기존 웹 화면을 그대로 내장하되 로그 분석 서버를 Rust로 독립 구현한 버전입니다. 두 파일은 릴리즈의 파일명에서 `Rust` 포함 여부로 구분할 수 있습니다.
+
 ## 주요 기능
 
 | 기능 | 설명 |
