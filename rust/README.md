@@ -1,4 +1,4 @@
-# JEUS Lens — Rust edition v1.0.1
+# JEUS Lens — Rust edition v1.0.2
 
 기존 Go 실행 파일에 의존하지 않는 독립적인 Rust 백엔드입니다. 기존 웹 화면을 Rust 실행 파일에 임베드하므로 HTML/CSS/JavaScript 화면 자체는 재사용합니다. **프런트엔드까지 Rust/WASM으로 재작성한 제품은 아닙니다.**
 
@@ -38,7 +38,7 @@ python3 tests/rust_parity.py /tmp/jeus-go rust/target/release/jeus-lens-rust
 
 검증은 각 프로세스가 서로 다른 임시 데이터 폴더에서 동일한 합성 로그를 처리해 SHA-256, SQL 분류, 오류 통계, 그룹 식별자, 24바이트 인덱스 원문, 필터/페이지, UTF-16 및 CP949를 비교합니다. 실제 운영 로그와 SSH 비밀번호는 저장소나 빌드 아티팩트에 포함하지 않습니다.
 
-## v1.0.1 배포 검증 항목
+## v1.0.2 배포 검증 항목
 
 1. Rust 단위 테스트·정적 분석·Linux 기반 Go 차등 테스트 통과
 2. Windows x64 네이티브 빌드 및 단위 테스트 통과
