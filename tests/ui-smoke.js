@@ -40,8 +40,8 @@ window.fetch=async function(input,opts={}){
   if(route==='/api/page-by-ids'){const req=JSON.parse(opts.body);return message({rows:req.indices.map(i=>window.mockRows[i])})}
   if(route==='/api/delete'){window.mockImported=false;return message({deleted:true})}
   if(route==='/api/status')return message({stage:'complete',indexed:window.mockSummary.size,size:window.mockSummary.size});
-  if(route==='/api/update/check'){window.updateRequests=(window.updateRequests||0)+1;return message({currentVersion:'1.0.2',latestVersion:'1.0.3',updateAvailable:true,asset:'JEUS_Lens_Rust_Windows_x64.exe',size:4800000,runtime:'rust',installSupported:true})}
-  if(route==='/api/update/apply'){window.updateInstallCount=(window.updateInstallCount||0)+1;return message({status:'installing',version:'1.0.3'})}
+  if(route==='/api/update/check'){window.updateRequests=(window.updateRequests||0)+1;return message({currentVersion:'1.0.3',latestVersion:'1.0.4',updateAvailable:true,asset:'JEUS_Lens_Rust_Windows_x64.exe',size:4800000,runtime:'rust',installSupported:true})}
+  if(route==='/api/update/apply'){window.updateInstallCount=(window.updateInstallCount||0)+1;return message({status:'installing',version:'1.0.4'})}
   if(route==='/api/remote-trace'){window.remoteRequest=JSON.parse(opts.body);if(window.mockRemoteHang)return new Promise((resolve,reject)=>opts.signal.addEventListener('abort',()=>reject(new DOMException('Cancelled','AbortError')),{once:true}));const stages=window.mockRemoteFails?
     [{stage:'tcp',level:'info',code:'CONNECTING',message:'연결 시도'},{stage:'ssh',level:'error',code:'AUTH_FAILED',message:'사용자 인증 실패'}]:
     [{stage:'tcp',level:'info',code:'CONNECTING',message:'연결 시도'},{stage:'auth',level:'success',code:'AUTHENTICATED',message:'계정 인증 완료'},{stage:'done',level:'success',code:'DONE',message:'종료',size:15,offset:0,data:btoa(window.mockRemoteText||'REMOTE LOG SAFE'),partial:false}];
@@ -159,7 +159,7 @@ assert.equal(await js(`document.querySelector('#remoteTargetList').options.lengt
 if(captureDocs)await js(`(()=>{document.querySelector('#remoteHost').value='';document.querySelector('#remoteUser').value='';document.querySelector('#remotePass').value='';document.querySelector('#remoteFingerprint').value='';document.querySelector('#remotePath').value='';document.querySelector('#remoteOutput').textContent='';document.querySelector('#remoteStatus').textContent='서버 호스트키를 확인하고 읽기 전용 계정으로 접속합니다.';})()`);
 await saveDocsScreenshot('04-remote-sftp.png','.remote-panel');
 await until(()=>js(`document.querySelector('#updateApply').disabled===false`));
-assert.match(await js(`document.querySelector('#updateStatus').textContent`),/1\.0\.3/);
+assert.match(await js(`document.querySelector('#updateStatus').textContent`),/1\.0\.4/);
 await js(`document.querySelector('#updateApply').click()`);
 await until(()=>js(`window.updateInstallCount===1`));
 assert.match(await js(`document.querySelector('#updateStatus').textContent`),/자동 재실행/);
