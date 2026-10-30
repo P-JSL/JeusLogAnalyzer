@@ -2,7 +2,7 @@
 
 기존 Go 실행 파일에 의존하지 않는 독립적인 Rust 백엔드입니다. 기존 웹 화면을 Rust 실행 파일에 임베드하므로 HTML/CSS/JavaScript 화면 자체는 재사용합니다. **프런트엔드까지 Rust/WASM으로 재작성한 제품은 아닙니다.**
 
-정식 릴리즈에 게시하기 전 기능 및 Go 호환성 검증을 진행합니다.
+정식 배포는 원본 Go판과 Rust판의 실제 동작 비교, Windows EXE 실행, SFTP 실서버 테스트 및 1GiB 스트리밍 검증이 모두 통과한 커밋으로만 진행합니다.
 
 ## Rust로 구현한 서버 측 기능
 
@@ -20,10 +20,10 @@ Rust stable toolchain이 필요합니다.
 
 ~~~bash
 cd rust
-cargo fmt --check
-cargo test --all-targets
-cargo clippy --all-targets -- -D warnings
-cargo build --release
+cargo fmt
+cargo test --all-targets --locked
+cargo clippy --all-targets --locked -- -D warnings
+cargo build --release --locked
 ~~~
 
 Windows x64의 경우 Windows에서 네이티브 빌드합니다. 실행 파일은 target/release/jeus-lens-rust.exe 입니다.
@@ -32,7 +32,7 @@ Go/Rust API 및 인덱스 비교:
 
 ~~~bash
 go build -o /tmp/jeus-go .
-cd rust && cargo build --release && cd ..
+cd rust && cargo build --release --locked && cd ..
 python3 tests/rust_parity.py /tmp/jeus-go rust/target/release/jeus-lens-rust
 ~~~
 
