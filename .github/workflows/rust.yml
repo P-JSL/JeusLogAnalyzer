@@ -11,6 +11,7 @@ on:
       - 'tests/rust_large_stream.py'
       - '.github/workflows/rust.yml'
       - '.github/workflows/rust-release.yml'
+      - '.github/workflows/release-v1.0.2.yml'
       - 'web/**'
   pull_request:
     paths:
@@ -22,6 +23,7 @@ on:
       - 'tests/rust_large_stream.py'
       - '.github/workflows/rust.yml'
       - 'web/**'
+      - '.github/workflows/release-v1.0.2.yml'
   workflow_dispatch:
 
 permissions:
