@@ -11,6 +11,40 @@ import (
  "os"
  "path"
  "regexp"
+ "strings"
+ "time"
+
+ "github.com/pkg/sftp"
+ "golang.org/x/crypto/ssh"
+)
+
+// Remote SFTP access is strictly limited to SSH's SFTP subsystem and to
+// Stat/Lstat/Open/ReadAt. No shell, exec, upload, modify, chmod or delete API
+// is exposed. Remote OS privileges must still be restricted by the server admin.
+type remoteTailRequest struct {
+ Host string `json:"host"`
+ Port int `json:"port"`
+ User string `json:"user"`
+ Password string `json:"password"`
+ Fingerprint string `json:"fingerprint"`
+ Path string `json:"path"`
+ MaxBytes int64 `json:"maxBytes"`
+}
+
+var remoteHostname = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$`)
+var remoteFingerprint = regexp.MustCompile(`^SHA256:[A-Za-z0-9+/]{35,50}package main
+
+import (
+ "context"
+ "crypto/subtle"
+ "encoding/json"
+ "errors"
+ "io"
+ "net"
+ "net/http"
+ "os"
+ "path"
+ "regexp"
  "strconv"
  "strings"
  "time"
@@ -33,7 +67,48 @@ type remoteTailRequest struct {
 }
 
 var remoteHostname = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$`)
-var remoteFingerprint = regexp.MustCompile(`^SHA256:[A-Za-z0-9+/]{35,50}$`)
+)
+ 
+// Permit conventional text log names across JEUS, WebtoB, Tomcat, Nginx,
+// Apache, Linux syslog and other middleware. Never allow arbitrary files or
+// compressed/binary archives through the text-only SFTP preview.
+var remoteLogFilename = regexp.MustCompile(`(?i)^(?:[^/]+\.(?:log|out|txt|trace|err|error|audit|jsonl|ndjson)(?:[._-][0-9][0-9A-Za-z._-]{0,31})?|(?:access_log|error_log|syslog|messages|secure|maillog)(?:[._-][0-9][0-9A-Za-z._-]{0,31})?)package main
+
+import (
+ "context"
+ "crypto/subtle"
+ "encoding/json"
+ "errors"
+ "io"
+ "net"
+ "net/http"
+ "os"
+ "path"
+ "regexp"
+ "strconv"
+ "strings"
+ "time"
+
+ "github.com/pkg/sftp"
+ "golang.org/x/crypto/ssh"
+)
+
+// Remote SFTP access is strictly limited to SSH's SFTP subsystem and to
+// Stat/Lstat/Open/ReadAt. No shell, exec, upload, modify, chmod or delete API
+// is exposed. Remote OS privileges must still be restricted by the server admin.
+type remoteTailRequest struct {
+ Host string `json:"host"`
+ Port int `json:"port"`
+ User string `json:"user"`
+ Password string `json:"password"`
+ Fingerprint string `json:"fingerprint"`
+ Path string `json:"path"`
+ MaxBytes int64 `json:"maxBytes"`
+}
+
+var remoteHostname = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$`)
+)
+
 
 func validateRemoteTail(v remoteTailRequest) error {
  if !remoteHostname.MatchString(v.Host) && net.ParseIP(v.Host)==nil {return errors.New("잘못된 서버 주소입니다")}
@@ -44,18 +119,9 @@ func validateRemoteTail(v remoteTailRequest) error {
  if len(v.Path)==0 || len(v.Path)>2048 || !strings.HasPrefix(v.Path,"/") || strings.ContainsAny(v.Path,"\\\x00\r\n") {return errors.New("절대 로그 경로를 입력해 주세요")}
  for _,segment:=range strings.Split(v.Path,"/"){if segment==".." || segment=="." {return errors.New("경로 이동은 허용하지 않습니다")}}
  if path.Clean(v.Path)!=v.Path {return errors.New("정규화된 절대 경로를 입력해 주세요")}
- base:=path.Base(v.Path)
- lower:=strings.ToLower(base)
- allowed:=strings.HasSuffix(lower,".log")||strings.HasSuffix(lower,".out")||strings.HasSuffix(lower,".txt")||strings.HasSuffix(lower,".trace")
- // JEUS rolling logs (server.log.1 etc) are also read-only.
- if !allowed {
-  for _,ext:=range []string{".log.",".out.",".txt.",".trace."} {
-   if i:=strings.LastIndex(lower,ext);i>=0 {
-    n:=lower[i+len(ext):];_,err:=strconv.Atoi(n);if err==nil&&len(n)<=6{allowed=true;break}
-   }
-  }
+ if !remoteLogFilename.MatchString(path.Base(v.Path)) {
+  return errors.New("지원하는 텍스트 로그 파일명(.log/.out/.txt/.trace/.err, access_log, syslog 등)만 읽을 수 있습니다. 압축 파일은 지원하지 않습니다")
  }
- if !allowed {return errors.New("로그 파일 확장자만 조회할 수 있습니다")}
  if v.MaxBytes<1||v.MaxBytes>512*1024 {return errors.New("한 번에 최대 512KiB만 조회할 수 있습니다")}
  return nil
 }
