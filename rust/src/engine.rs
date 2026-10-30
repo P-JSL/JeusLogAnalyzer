@@ -245,7 +245,22 @@ impl Indexer{
     self.previous=b;
    }
   }else{
-   for &b in bytes{self.offset+=1;self.carry_len+=1;if self.carry.len()<65536{self.carry.push(b)}if b==10{self.line_done()?}}
+   // Scan in whole slices instead of doing four branches and one push per
+   // byte. A 1 GiB single-line log now takes O(n) byte scanning but only
+   // O(min(line_length, 64 KiB)) copying and allocation.
+   let mut remaining=bytes;
+   while !remaining.is_empty(){
+    let take=remaining.iter().position(|&byte|byte==b'\\n').map_or(remaining.len(),|n|n+1);
+    let part=&remaining[..take];
+    self.offset+=take as u64;
+    self.carry_len+=take as u64;
+    if self.carry.len()<65536{
+     let keep=(65536-self.carry.len()).min(part.len());
+     self.carry.extend_from_slice(&part[..keep]);
+    }
+    if part.last()==Some(&b'\\n'){self.line_done()?}
+    remaining=&remaining[take..];
+   }
   }
   Ok(())
  }
