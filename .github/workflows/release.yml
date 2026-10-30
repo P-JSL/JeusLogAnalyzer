@@ -1,0 +1,86 @@
+name: Publish JEUS Lens v1.0.0
+
+on:
+  workflow_run:
+    workflows: ["Verify and build JEUS Lens"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exactly the verified commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Confirm release does not already exist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: v1.0.0
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $RELEASE_TAG exists; refusing to replace its assets."
+            exit 1
+          fi
+
+      - name: Download executable from the successful verification run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFIED_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          mkdir -p dist
+          gh run download "$VERIFIED_RUN_ID" --repo "$GITHUB_REPOSITORY" --name JEUS-Lens-Windows-x64 --dir dist
+          test -s dist/JEUS_Lens_Windows_x64.exe
+          file dist/JEUS_Lens_Windows_x64.exe
+
+      - name: Package the first official Windows distribution
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile, ZIP_DEFLATED
+          folder = Path("dist")
+          archive = folder / "JEUS_Lens_Windows_x64_v1.0.0.zip"
+          with ZipFile(archive, "w", compression=ZIP_DEFLATED, compresslevel=9) as z:
+              z.write(folder / "JEUS_Lens_Windows_x64.exe", "JEUS_Lens_Windows_x64.exe")
+              z.write("README.md", "README.md")
+              z.write("RELEASE_NOTES.md", "RELEASE_NOTES.md")
+          print(f"Created {archive} ({archive.stat().st_size} bytes)")
+          PY
+          cd dist
+          sha256sum JEUS_Lens_Windows_x64.exe JEUS_Lens_Windows_x64_v1.0.0.zip > SHA256SUMS.txt
+
+      - name: Create release and upload verified Windows binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFIED_COMMIT: ${{ github.event.workflow_run.head_sha }}
+          RELEASE_TAG: v1.0.0
+        run: |
+          gh release create "$RELEASE_TAG" \
+            dist/JEUS_Lens_Windows_x64.exe \
+            dist/JEUS_Lens_Windows_x64_v1.0.0.zip \
+            dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$VERIFIED_COMMIT" \
+            --title "JEUS Lens v1.0.0" \
+            --notes-file RELEASE_NOTES.md \
+            --latest
+
+      - name: Verify published release and assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view v1.0.0 --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,assets \
+            --jq '{tagName,isDraft,assets:[.assets[].name]}'
+          for name in JEUS_Lens_Windows_x64.exe JEUS_Lens_Windows_x64_v1.0.0.zip SHA256SUMS.txt; do
+            gh release view v1.0.0 --repo "$GITHUB_REPOSITORY" --json assets \
+              --jq '.assets[].name' | grep -Fx "$name"
+          done
