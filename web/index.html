@@ -36,12 +36,28 @@
   <label class="remote-wide">원격 로그 절대경로<input id="remotePath" autocomplete="off" placeholder="/path/to/JeusServer.log"></label>
  </div>
  <div class="remote-actions">
-  <button id="remoteRead" class="btn secondary" type="button">최근 로그 512KiB 조회</button>
+  <button id="remoteConnect" class="btn primary" type="button">SSH/SFTP 연결 및 조회</button>
+  <button id="remoteRead" class="btn secondary" type="button">다시 조회</button>
+  <button id="remoteDisconnect" class="btn secondary" type="button" disabled>연결 중단</button>
   <label class="search-option"><input id="remoteAuto" type="checkbox"> 10초마다 새로고침</label>
   <label class="search-option">인코딩<select id="remoteEncoding"><option value="utf-8">UTF-8</option><option value="euc-kr">CP949/EUC-KR</option></select></label>
   <span id="remoteStatus" class="tiny-muted" role="status">서버 자격 증명은 이 세션에서만 사용하며 파일을 저장하지 않습니다.</span>
  </div>
- <pre id="remoteOutput" class="remote-output" aria-label="원격 로그 미리보기"></pre>
+ <div class="remote-tabbar" role="tablist" aria-label="원격 연결 상세">
+  <button id="remoteTabContent" role="tab" aria-selected="true" aria-controls="remotePreviewPanel" type="button">원격 로그 내용</button>
+  <button id="remoteTabTrace" role="tab" aria-selected="false" aria-controls="remoteTracePanel" type="button">연결 진단 로그 <span id="remoteTraceCount">0</span></button>
+ </div>
+ <div id="remotePreviewPanel" role="tabpanel" aria-labelledby="remoteTabContent">
+  <pre id="remoteOutput" class="remote-output" aria-label="원격 로그 미리보기"></pre>
+ </div>
+ <div id="remoteTracePanel" role="tabpanel" aria-labelledby="remoteTabTrace" class="hidden">
+  <div class="remote-trace-head"><span>접속 준비 → TCP/SSH → 서버 지문 → 사용자 인증 → SFTP → 파일 확인 → 읽기 → 종료</span>
+   <button id="remoteTraceCopy" class="btn secondary" type="button">진단 로그 복사</button>
+   <button id="remoteTraceClear" class="btn secondary" type="button">기록 지우기</button>
+  </div>
+  <div id="remoteTraceOutput" role="log" aria-live="polite" aria-relevant="additions" class="remote-trace-output">연결을 시작하면 단계별 진단 기록이 실시간으로 표시됩니다.</div>
+  <p class="detail-hint">진단 기록은 현재 브라우저 메모리에만 보관합니다. 비밀번호·인증 토큰·로그 원문은 기록하지 않습니다. SSH 연결은 매 조회마다 생성하고 조회 종료 시 닫습니다.</p>
+ </div>
  <p class="detail-hint">SFTP 프로토콜로 일반 로그 파일의 끝부분만 읽습니다. 원격 쉘 실행, 업로드, 삭제, 권한 변경 기능은 제공하지 않습니다. 서버 계정 권한 자체는 애플리케이션이 제한할 수 없으므로 서버에서도 조회 전용 계정을 사용해야 합니다. 이 화면의 조회는 전체 파일 인덱싱이나 장애 확정 진단이 아닙니다.</p>
 </section><div id="notice" role="status" class="notice hidden"></div>
         <section id="progressPanel" class="progress-panel hidden" aria-live="polite"><div class="progress-label"><span id="progressLabel">파일 분석 중...</span><span id="progressPercent">0%</span></div><div class="progress-track"><div id="progressBar"></div></div></section>
