@@ -37,7 +37,7 @@
   if(el('remoteDisconnect')?.disabled===false)el('remoteDisconnect').click();
   if(el('remoteAuto').checked){el('remoteAuto').checked=false;el('remoteAuto').dispatchEvent(new Event('change'))}
   selected=id;const match=saved.find(x=>x.id===id);
-  if(!match){label.value='';el('remotePass').value='';source.value='jeus';kind.value='app';profileChange();return}
+  if(!match){label.value='';for(const id of ['remoteHost','remoteUser','remotePass','remoteFingerprint','remotePath'])el(id).value='';el('remotePort').value='22';source.value='jeus';kind.value='app';profileChange();return}
   label.value=match.name;source.value=match.service;kind.value=match.kind;
   for(const key of ['host','port','user','fingerprint','path']){
    const ids={host:'remoteHost',port:'remotePort',user:'remoteUser',fingerprint:'remoteFingerprint',path:'remotePath'};
