@@ -6,7 +6,7 @@
  const connect=el('remoteConnect'),readButton=el('remoteRead'),disconnect=el('remoteDisconnect');
  const status=el('remoteStatus'),output=el('remoteOutput'),traceOutput=el('remoteTraceOutput');
  let busy=false,refresh=null,controller=null,generation=0;
- const fields=['remoteHost','remotePort','remoteUser','remotePass','remoteFingerprint','remotePath'];
+ const fields=['remoteHost','remotePort','remoteUser','remotePass','remoteFingerprint','remotePath','remoteService','remoteEncoding'];
  const logLines=[];
  const codes={START:'접속 시작',VALID:'입력 검증',CONNECTING:'TCP/SSH 연결 시도',CONNECTED:'TCP 연결 성공',SSH_CONNECTED:'SSH 연결 성공',
   CHECKING:'서버 신원 검증',MATCHED:'서버 신원 확인',HANDSHAKE:'SSH 핸드셰이크',AUTHENTICATING:'계정 인증',
@@ -44,6 +44,7 @@
  }
  function stopAuto(){if(refresh){clearInterval(refresh);refresh=null}}
  function stop(){
+  window.RemoteLogProfiles?.clear?.();
   generation++;
   if(controller){controller.abort();controller=null}
   busy=false;connect.disabled=false;readButton.disabled=false;disconnect.disabled=true;
@@ -62,6 +63,8 @@
  async function runTrace(manual=true){
   if(busy||document.hidden)return;
   const id=++generation;
+  // A stale preview must never survive a new request, including failed refresh.
+  window.RemoteLogProfiles?.clear?.();
   const abort=new AbortController();controller=abort;busy=true;
   connect.disabled=true;readButton.disabled=true;disconnect.disabled=false;
   if(manual){logLines.length=0;traceOutput.replaceChildren();el('remoteTraceCount').textContent='0';tab('trace')}
@@ -109,6 +112,6 @@
  el('remoteTraceClear').addEventListener('click',()=>{logLines.length=0;traceOutput.replaceChildren();traceOutput.textContent='진단 기록을 지웠습니다.';el('remoteTraceCount').textContent='0'});
  el('remoteTraceCopy').addEventListener('click',()=>{void navigator.clipboard?.writeText(logLines.map(v=>'['+v.ts+'] ['+v.code+'] '+v.detail).join('\n')).catch(()=>{status.textContent='클립보드 복사를 허용하지 않는 브라우저입니다.'})});
  el('remoteAuto').addEventListener('change',updateAuto);
- for(const field of fields){el(field).addEventListener('change',()=>{el('remoteAuto').checked=false;stopAuto()})}
+ for(const field of fields){el(field).addEventListener('change',()=>{el('remoteAuto').checked=false;stopAuto();if(busy)stop();else window.RemoteLogProfiles?.clear?.()})}
  window.addEventListener('pagehide',()=>{if(controller)controller.abort();stopAuto()});
 })();

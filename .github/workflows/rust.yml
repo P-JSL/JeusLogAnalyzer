@@ -13,6 +13,10 @@ on:
       - '.github/workflows/rust-release.yml'
       - '.github/workflows/release-v1.0.2.yml'
       - 'web/**'
+      - 'remote_sftp.go'
+      - 'remote_sftp_trace.go'
+      - 'remote_sftp_test.go'
+      - '.github/workflows/release-v1.0.3.yml'
   pull_request:
     paths:
       - 'rust/**'
@@ -23,7 +27,11 @@ on:
       - 'tests/rust_large_stream.py'
       - '.github/workflows/rust.yml'
       - 'web/**'
+      - 'remote_sftp.go'
+      - 'remote_sftp_trace.go'
+      - 'remote_sftp_test.go'
       - '.github/workflows/release-v1.0.2.yml'
+      - '.github/workflows/release-v1.0.3.yml'
   workflow_dispatch:
 
 permissions:

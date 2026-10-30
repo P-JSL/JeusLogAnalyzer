@@ -11,7 +11,10 @@ use base64::{engine::general_purpose::STANDARD,Engine};
 #[serde(rename_all="camelCase")]
 pub struct RemoteReq{host:String,port:u16,user:String,password:String,fingerprint:String,path:String,max_bytes:u64}
 fn check(q:&RemoteReq)->Result<(),String>{
- if q.host.is_empty()||q.host.len()>253||!q.host.bytes().all(|b|b.is_ascii_alphanumeric()||matches!(b,b'.'|b'-'|b':')){return Err("잘못된 서버 주소".into())}
+ // Match Go: DNS-style names or valid IPv4/IPv6 literals (no arbitrary colons).
+ static HOSTNAME:std::sync::OnceLock<regex::Regex>=std::sync::OnceLock::new();
+ let valid_name=HOSTNAME.get_or_init(||regex::Regex::new(r"^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$").expect("valid hostname policy")).is_match(&q.host);
+ if !valid_name&&q.host.parse::<std::net::IpAddr>().is_err(){return Err("잘못된 서버 주소".into())}
  if q.port==0||q.user.is_empty()||q.user.len()>128||q.user.bytes().any(|b|b==0||b==10||b==13)||q.password.is_empty()||q.password.len()>1024{return Err("SSH 사용자 또는 비밀번호가 올바르지 않습니다".into())}
  if !q.fingerprint.starts_with("SHA256:")||q.fingerprint.len()<42||q.fingerprint.len()>57||!q.fingerprint[7..].bytes().all(|b|b.is_ascii_alphanumeric()||b==b'+'||b==b'/'){return Err("SHA256 호스트키 지문을 입력해야 합니다".into())}
  if !q.path.starts_with('/')||q.path.len()>2048||q.path.contains(['\\','\n','\r','\0'])||q.path[1..].split('/').any(|s|s==".."||s=="."||s.is_empty()){return Err("올바른 절대 로그 경로를 입력하세요".into())}
@@ -188,6 +191,15 @@ pub async fn remote_trace(Json(q):Json<RemoteReq>)->Response{
    "/var/log//server.log","relative/access_log"
   ]{
    let mut q=base.clone();q.path=filename.into();assert!(check(&q).is_err(),"allows {filename}");
+  }
+ }
+ #[test]fn hostname_validation_matches_go(){
+  let mut q=RemoteReq{host:"127.0.0.1".into(),port:22,user:"readonly".into(),password:"test".into(),fingerprint:format!("SHA256:{}", "A".repeat(43)),path:"/logs/server.log".into(),max_bytes:512*1024};
+  for host in ["localhost","server-01.example.com","127.0.0.1","::1","2001:db8::1","a..b"]{
+   q.host=host.into();assert!(check(&q).is_ok(),"Go accepts {host}");
+  }
+  for host in ["","-bad","bad_name","bad:host","a:22","host/path","bad host"]{
+   q.host=host.into();assert!(check(&q).is_err(),"Go rejects {host}");
   }
  }
  #[test]fn deny_unsafe_remote(){let mut q=RemoteReq{host:"127.0.0.1".into(),port:22,user:"readonly".into(),password:"test".into(),fingerprint:format!("SHA256:{}", "A".repeat(43)),path:"/logs/server.log".into(),max_bytes:512*1024};assert!(check(&q).is_ok());q.path="/etc/../shadow.log".into();assert!(check(&q).is_err());q.path="/logs/server.log".into();q.fingerprint.clear();assert!(check(&q).is_err());q.fingerprint=format!("SHA256:{}", "A".repeat(43));q.max_bytes=1<<30;assert!(check(&q).is_err());}

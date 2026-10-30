@@ -20,7 +20,7 @@ import (
  "unicode/utf16"
 )
 
-const currentAppVersion="1.0.2"
+const currentAppVersion="1.0.3"
 const gitHubRepoAPI="https://api.github.com/repos/P-JSL/JeusLogAnalyzer"
 const goReleaseAsset="JEUS_Lens_Windows_x64.exe"
 const updateSizeLimit int64=120*1024*1024
@@ -48,7 +48,7 @@ func releaseLookup(ctx context.Context,token string)(updateReleaseData,error){
  if len(token)>2048||strings.ContainsAny(token,"\r\n"){return none,errors.New("GitHub 인증 토큰 형식이 잘못되었습니다")}
  req,err:=http.NewRequestWithContext(ctx,"GET",gitHubRepoAPI+"/releases/latest",nil)
  if err!=nil{return none,errors.New("릴리즈 요청 생성 실패")}
- req.Header.Set("Accept","application/vnd.github+json");req.Header.Set("User-Agent","JEUS-Lens-LocalUpdater/1.0.2")
+ req.Header.Set("Accept","application/vnd.github+json");req.Header.Set("User-Agent","JEUS-Lens-LocalUpdater/1.0.3")
  req.Header.Set("X-GitHub-Api-Version","2022-11-28")
  if token!=""{req.Header.Set("Authorization","Bearer "+token)}
  client:=&http.Client{Timeout:18*time.Second}
@@ -105,7 +105,7 @@ func updateApply(w http.ResponseWriter,r *http.Request){
  stage:=temp.Name();defer func(){_ = temp.Close();_ = os.Remove(stage)}()
  req,err:=http.NewRequestWithContext(ctx,"GET",gitHubRepoAPI+"/releases/assets/"+strconv.FormatInt(rel.Asset.ID,10),nil)
  if err!=nil{updateError(w,500,"다운로드 요청 생성 실패");return}
- req.Header.Set("Accept","application/octet-stream");req.Header.Set("User-Agent","JEUS-Lens-LocalUpdater/1.0.2")
+ req.Header.Set("Accept","application/octet-stream");req.Header.Set("User-Agent","JEUS-Lens-LocalUpdater/1.0.3")
  if q.Token!=""{req.Header.Set("Authorization","Bearer "+q.Token)}
  resp,err:=(&http.Client{Timeout:75*time.Second}).Do(req)
  if err!=nil{updateError(w,502,"업데이트 실행 파일 다운로드에 실패했습니다");return}

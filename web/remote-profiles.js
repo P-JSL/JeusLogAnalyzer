@@ -73,26 +73,29 @@
   selected='';renderTargets();choose('');
   el('remoteStatus').textContent='접속 대상이 현재 세션 목록에서 제거됐습니다.';
  }
- function detect(line){
-  // Apache combined and WebtoB 5/6 common/default access formats: METHOD
-  // path HTTP/version followed by status. Avoid matching incidental numbers.
-  const match=/"(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|CONNECT|TRACE)\s[^"]*"\s+([1-5][0-9]{2})\b/i.exec(line);
+ function detect(line,mode){
+  // Recognize standard quoted HTTP request/status pairs only for access or auto.
+  const httpAllowed=mode==='auto'||mode==='access';
+  const match=httpAllowed?/"(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|CONNECT|TRACE)\s[^"]*"\s+([1-5][0-9]{2})\b/i.exec(line):null;
   const status=match?Number(match[1]):0;
-  const error=status>=500||/\b(?:ERROR|FATAL|SEVERE|CRITICAL|EXCEPTION|PANIC|SQLSTATE)\b|ORA-\d{5}/i.test(line);
-  const warning=!error&&(status>=400||/\bWARN(?:ING)?\b/i.test(line));
+  // JEUS numeric severity 0=error, 1=warning, independent of message text.
+  const jeus=/^\[\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}[ T]\d{2}:\d{2}:\d{2}[^\]\r\n]*\]\s*\[([0-7])\](?=\s|\[)/.exec(line);
+  const explicit=jeus?jeus[1]:null;
+  const error=explicit==='0'||(explicit===null&&(status>=500||/\b(?:ERROR|FATAL|SEVERE|CRITICAL|EXCEPTION|PANIC|SQLSTATE)\b|ORA-\d{5}/i.test(line)));
+  const warning=explicit==='1'||(explicit===null&&!error&&(status>=400||/\bWARN(?:ING)?\b/i.test(line)));
   return {http:Boolean(match),status,error,warning};
  }
- function summarize(text){
+ function summarize(text,mode){
   const lines=text.split(/\r?\n/);
   if(lines.at(-1)==='')lines.pop();
-  const results=lines.map(detect);
+  const results=lines.map(line=>detect(line,mode));
   const counts={errors:0,warnings:0,http:0,server:0,client:0};
   for(const e of results){if(e.error)counts.errors++;if(e.warning)counts.warnings++;if(e.http)counts.http++;if(e.status>=500)counts.server++;else if(e.status>=400)counts.client++}
   return {lines,results,counts};
  }
  function renderPreview(){
   if(!lastText){resetPreview();return}
-  const analysis=summarize(lastText);
+  const analysis=summarize(lastText,kind.value);
   const {lines,results,counts}=analysis;
   const filter=el('remoteLineFilter').value;
   let visible=0;
@@ -104,11 +107,15 @@
   }
   const prefix=lastPartial?'[마지막 512KiB만 읽었습니다. 첫 번째 줄이 잘렸을 수 있습니다.]\n':'';
   el('remoteOutput').textContent=prefix+(selectedLines.join('\n')||'(선택한 조건에 해당하는 로그 행이 없습니다.)');
+  const httpCount=(kind.value==='auto'||kind.value==='access')
+   ?' · HTTP 요청 '+counts.http+' (5xx '+counts.server+', 4xx '+counts.client+', 표준 요청 형식만 인식)'
+   :' · HTTP 분석 제외 ('+kind.options[kind.selectedIndex].textContent+')';
   el('remoteLogSummary').textContent='최근 구간 '+lines.length.toLocaleString('ko-KR')+'행 · 오류 '+counts.errors+' · 경고 '+counts.warnings+
-   ' · HTTP 요청 '+counts.http+' (5xx '+counts.server+', 4xx '+counts.client+') · 표시 '+visible+'행';
+   httpCount+' · 표시 '+visible+'행';
  }
  window.RemoteLogProfiles={
   onData(text,data){lastText=text;lastPartial=Boolean(data?.partial);renderPreview()},
+  clear:resetPreview,
   profileNames:profiles
  };
  source.addEventListener('change',profileChange);

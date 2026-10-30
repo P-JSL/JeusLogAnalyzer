@@ -69,3 +69,12 @@ func TestRemoteLogFileNamePortableMiddleware(t *testing.T){
  for _,p:=range accepted{v:=remoteRequestForTest();v.Path=p;if err:=validateRemoteTail(v);err!=nil{t.Errorf("should allow %q: %s",p,err)}}
  for _,p:=range rejected{v:=remoteRequestForTest();v.Path=p;if err:=validateRemoteTail(v);err==nil{t.Errorf("should reject %q",p)}}
 }
+
+func TestRemoteHostnameGoRustParity(t *testing.T){
+ for _,host:=range []string{"localhost","server-01.example.com","127.0.0.1","::1","2001:db8::1","a..b"}{
+  q:=remoteRequestForTest();q.Host=host;if err:=validateRemoteTail(q);err!=nil{t.Errorf("Go must allow %q: %v",host,err)}
+ }
+ for _,host:=range []string{"","-bad","bad_name","bad:host","a:22","host/path","bad host"}{
+  q:=remoteRequestForTest();q.Host=host;if err:=validateRemoteTail(q);err==nil{t.Errorf("Go must reject %q",host)}
+ }
+}
