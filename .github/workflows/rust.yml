@@ -21,6 +21,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          shared-key: jeus-rust-native
       - name: Native Rust compile and unit tests
         working-directory: rust
         run: |
@@ -42,6 +46,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          shared-key: jeus-rust-native
       - name: Test and build independent native Rust Windows x64 application
         working-directory: rust
         run: |
