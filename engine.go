@@ -822,7 +822,9 @@ func buildIndexStreamContext(ctx context.Context, source io.Reader, dir, enc str
 			}
 		}
 		// An explicit level is authoritative; failure inference matters only for unlevelled records.
-		if likelyFailure(clean) || oraCode.MatchString(clean) {
+		// Ordinary INFO lines avoid the Oracle-code regexp unless a vendor prefix is present.
+		vendorHint := strings.Contains(clean,"ORA-") || strings.Contains(clean,"ora-") || strings.Contains(clean,"PLS-") || strings.Contains(clean,"pls-")
+		if likelyFailure(clean) || (vendorHint && oraCode.MatchString(clean)) {
 			state.suspect = true
 			if state.explicit == 0 {state.failure = true}
 		}
