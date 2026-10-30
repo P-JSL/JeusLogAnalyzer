@@ -15,9 +15,12 @@ fn check(q:&RemoteReq)->Result<(),String>{
  if q.port==0||q.user.is_empty()||q.user.len()>128||q.user.bytes().any(|b|b==0||b==10||b==13)||q.password.is_empty()||q.password.len()>1024{return Err("SSH 사용자 또는 비밀번호가 올바르지 않습니다".into())}
  if !q.fingerprint.starts_with("SHA256:")||q.fingerprint.len()<42||q.fingerprint.len()>57||!q.fingerprint[7..].bytes().all(|b|b.is_ascii_alphanumeric()||b==b'+'||b==b'/'){return Err("SHA256 호스트키 지문을 입력해야 합니다".into())}
  if !q.path.starts_with('/')||q.path.len()>2048||q.path.contains(['\\','\n','\r','\0'])||q.path[1..].split('/').any(|s|s==".."||s=="."||s.is_empty()){return Err("올바른 절대 로그 경로를 입력하세요".into())}
- let lower=q.path.to_ascii_lowercase();
- let ext=[".log",".out",".txt",".trace"].iter().any(|s|lower.ends_with(s))||[".log.",".out.",".txt.",".trace."].iter().any(|s|lower.rsplit_once(s).is_some_and(|(_,suffix)|suffix.len()<=6&&!suffix.is_empty()&&suffix.bytes().all(|b|b.is_ascii_digit())));
- if !ext||q.max_bytes==0||q.max_bytes>512*1024{return Err("로그 확장자 또는 최대 조회 크기가 잘못됐습니다".into())}
+ // Keep exactly the same portable text-log filename policy as Go.
+ // Cached regular expression: O(filename length) input validation.
+ static LOG_FILENAME:std::sync::OnceLock<regex::Regex>=std::sync::OnceLock::new();
+ let filename=q.path.rsplit('/').next().unwrap_or("");
+ let allowed=LOG_FILENAME.get_or_init(||regex::Regex::new(r"(?i)^(?:[^/]+\.(?:log|out|txt|trace|err|error|audit|jsonl|ndjson)(?:[._-][0-9][0-9A-Za-z._-]{0,31})?|(?:access_log|error_log|syslog|messages|secure|maillog)(?:[._-][0-9][0-9A-Za-z._-]{0,31})?)$").expect("valid fixed log filename policy")).is_match(filename);
+ if !allowed||q.max_bytes==0||q.max_bytes>512*1024{return Err("지원하지 않는 텍스트 로그 파일명 또는 조회 크기입니다. 압축 파일은 지원하지 않습니다".into())}
  Ok(())
 }
 struct VerifyHost{pin:String}
