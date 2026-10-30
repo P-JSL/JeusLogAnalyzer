@@ -40,8 +40,8 @@ const FRAME:&str=r"^\s*at\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)\(";
 const CONT:&str=r"(?i)^\s*(?:at\s+[\w.$<>/]+\(|Caused by\s*:|Suppressed\s*:|\.\.\.\s+\d+\s+more|<<__Exception__>>|\[STDERR\]|Exception in thread)";
 const FAILURE:&str=r"(?i)(?:^|[\s:[(])(?:ERROR|FATAL|SEVERE)(?:\b|\])";
 const WARN:&str=r"(?i)(?:^|[\s:[(])(?:WARN|WARNING)(?:\b|\])";
-fn capture<'a>(regex:&str,field:usize,s:&'a str)->Option<&'a str>{re(regex).captures(s).and_then(|m|m.get(field).map(|x|x.as_str()))}
-fn find<'a>(regex:&str,s:&'a str)->Option<&'a str>{re(regex).find(s).map(|x|x.as_str())}
+fn capture<'a>(regex:&'static str,field:usize,s:&'a str)->Option<&'a str>{re(regex).captures(s).and_then(|m|m.get(field).map(|x|x.as_str()))}
+fn find<'a>(regex:&'static str,s:&'a str)->Option<&'a str>{re(regex).find(s).map(|x|x.as_str())}
 fn level(s:&str)->u8{match s.to_ascii_uppercase().as_str(){"0"|"SEVERE"|"ERROR"|"FATAL"=>1,"1"|"WARN"|"WARNING"=>2,_=>3}}
 fn header(line:&str)->(bool,u8,String,String){
  if let Some(m)=re(JEUS).captures(line){return (true,level(&m[2]),m.get(5).map_or("",|m|m.as_str()).to_owned(),m.get(4).map_or("",|m|m.as_str()).to_owned());}
