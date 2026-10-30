@@ -41,7 +41,7 @@ window.fetch=async function(input,opts={}){
   if(route==='/api/status')return message({stage:'complete',indexed:window.mockSummary.size,size:window.mockSummary.size});
   if(route==='/api/update/check'){window.updateRequests=(window.updateRequests||0)+1;return message({currentVersion:'1.0.2',latestVersion:'1.0.3',updateAvailable:true,asset:'JEUS_Lens_Rust_Windows_x64.exe',size:4800000,runtime:'rust',installSupported:true})}
   if(route==='/api/update/apply'){window.updateInstallCount=(window.updateInstallCount||0)+1;return message({status:'installing',version:'1.0.3'})}
-  if(route==='/api/remote-trace'){window.remoteRequest=JSON.parse(opts.body);const stages=window.mockRemoteFails?
+  if(route==='/api/remote-trace'){window.remoteRequest=JSON.parse(opts.body);if(window.mockRemoteHang)return new Promise((resolve,reject)=>opts.signal.addEventListener('abort',()=>reject(new DOMException('Cancelled','AbortError')),{once:true}));const stages=window.mockRemoteFails?
     [{stage:'tcp',level:'info',code:'CONNECTING',message:'연결 시도'},{stage:'ssh',level:'error',code:'AUTH_FAILED',message:'사용자 인증 실패'}]:
     [{stage:'tcp',level:'info',code:'CONNECTING',message:'연결 시도'},{stage:'auth',level:'success',code:'AUTHENTICATED',message:'계정 인증 완료'},{stage:'done',level:'success',code:'DONE',message:'종료',size:15,offset:0,data:btoa('REMOTE LOG SAFE'),partial:false}];
     return new Response(stages.map(x=>JSON.stringify(x)).join(String.fromCharCode(10))+String.fromCharCode(10),{status:200,headers:{'Content-Type':'application/x-ndjson'}})}
@@ -113,6 +113,12 @@ await js(`(()=>{window.mockRemoteFails=true;document.querySelector('#remoteConne
 await until(()=>js(`document.querySelector('#remoteStatus').textContent.includes('AUTH_FAILED')`));
 assert.match(await js(`document.querySelector('#remoteTraceOutput').textContent`),/사용자 인증 실패/);
 await js(`window.mockRemoteFails=false`);
+await js(`(()=>{window.mockRemoteHang=true;document.querySelector('#remoteConnect').click()})()`);
+await until(()=>js(`document.querySelector('#remoteDisconnect').disabled===false`));
+await js(`document.querySelector('#remoteDisconnect').click();window.mockRemoteHang=false`);
+assert.match(await js(`document.querySelector('#remoteStatus').textContent`),/중단/);
+assert.equal(await js(`document.querySelector('#remoteConnect').disabled`),false);
+
 
 if(captureDocs)await js(`(()=>{document.querySelector('#remoteHost').value='';document.querySelector('#remoteUser').value='';document.querySelector('#remotePass').value='';document.querySelector('#remoteFingerprint').value='';document.querySelector('#remotePath').value='';document.querySelector('#remoteOutput').textContent='';document.querySelector('#remoteStatus').textContent='서버 호스트키를 확인하고 읽기 전용 계정으로 접속합니다.';})()`);
 await saveDocsScreenshot('04-remote-sftp.png','.remote-panel');
