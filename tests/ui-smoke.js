@@ -7,6 +7,7 @@ const fs=require('node:fs');const path=require('node:path');const os=require('no
 const assert=require('node:assert/strict');
 const root=path.join(__dirname,'..'),html=fs.readFileSync(path.join(root,'web/index.html'),'utf8'),css=fs.readFileSync(path.join(root,'web/style.css'),'utf8'),parser=fs.readFileSync(path.join(root,'web/parser.js'),'utf8'),app=fs.readFileSync(path.join(root,'web/app.js'),'utf8');
 const diagnostics=fs.readFileSync(path.join(root,'web/diagnostics.js'),'utf8');
+const remoteUI=fs.readFileSync(path.join(root,'web/remote-sftp.js'),'utf8');
 const delay=t=>new Promise(r=>setTimeout(r,t));
 let chrome,ws,index=0,pending=new Map();
 async function until(fn,timeout=12000){let last;let start=Date.now();while(Date.now()-start<timeout){try{last=await fn();if(last)return last;}catch{}await delay(120);}throw Error('timeout: '+String(last));}
@@ -28,6 +29,7 @@ window.fetch=async function(input,opts={}){
   if(route==='/api/page-by-ids'){const req=JSON.parse(opts.body);return message({rows:req.indices.map(i=>window.mockRows[i])})}
   if(route==='/api/delete'){window.mockImported=false;return message({deleted:true})}
   if(route==='/api/status')return message({stage:'complete',indexed:window.mockSummary.size,size:window.mockSummary.size});
+  if(route==='/api/remote-tail'){window.remoteRequest=JSON.parse(opts.body);return message({size:15,offset:0,data:btoa('REMOTE LOG SAFE'),partial:false})}
   throw Error('unknown mock route: '+route);
 };
 })();
@@ -37,7 +39,7 @@ const pages=await until(async()=>{const r=await fetch(`http://127.0.0.1:${port}/
 ws=new WebSocket(pages[0].webSocketDebuggerUrl);await new Promise(r=>ws.addEventListener('open',r,{once:true}));ws.addEventListener('message',e=>{const m=JSON.parse(e.data);if(pending.has(m.id)){const q=pending.get(m.id);pending.delete(m.id);m.error?q.reject(Error(JSON.stringify(m.error))):q.resolve(m.result);}});await call('Runtime.enable');await call('Page.enable');
 await js(`document.open();document.write(${JSON.stringify(html)});document.close();`);
 await js(`(()=>{let s=document.createElement('style');s.textContent=${JSON.stringify(css)};document.head.append(s);})()`);
-await js(parser);await js(diagnostics);await js(mock);await js(app);
+await js(parser);await js(diagnostics);await js(mock);await js(app);await js(remoteUI);
 const lines=['[2026.10.23 09:00:00][0] [m-1] [APP-3333] SQL error ORA-00904 invalid column','[2026.10.23 09:00:01][2] [m-1] [APP-3334] request complete'];
 await js(`(()=>{const txt=${JSON.stringify(lines.join('\n'))};const a=txt.split('\\n');let p=0;window.mockRows=a.map((s,i)=>{const n=new TextEncoder().encode(s).length;const row={index:i,offset:p,length:n,line:i+1,endLine:i+1,category:i===0?1:0,level:i===0?1:3,sqlType:i===0?'SQL 문법·객체':'기타 SQL'};p+=n+1;return row;});let blob=new File([txt],'sample.log',{type:'text/plain'});const dt=new DataTransfer();dt.items.add(blob);document.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt}));return true;})()`);
 await until(()=>js(`!document.querySelector('#results').classList.contains('hidden')&&document.querySelectorAll('#logRows tr').length===2`));
@@ -80,6 +82,10 @@ assert.equal(await js(`document.querySelectorAll('#hourlyChart .hour-item').leng
 assert.match(await js(`document.querySelector('#hourlyChart').textContent`),/최근 24개 기록 시간 구간/);
 const report=await js(`diagnosticSummary(window.mockSummary)`);assert.match(report,/원본 로그 제외/);assert.match(report,/오류율 급증 후보/);assert.match(report,/SQL 관련 이벤트: 1/);assert.ok(!report.includes('ORA-00904 invalid column'),'report should not embed full raw messages');
 await js(`document.querySelector('#closeDetail').click()`);
+await js(`(()=>{document.querySelector('#remoteHost').value='127.0.0.1';document.querySelector('#remotePort').value='22';document.querySelector('#remoteUser').value='readonly';document.querySelector('#remotePass').value='temporary';document.querySelector('#remotePath').value='/logs/server.log';document.querySelector('#remoteFingerprint').value='SHA256:AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefg';document.querySelector('#remoteRead').click()})()`);
+await until(()=>js(`document.querySelector('#remoteOutput').textContent.includes('REMOTE LOG SAFE')`));
+assert.equal(await js(`window.remoteRequest.maxBytes`),524288);
+assert.equal(await js(`window.remoteRequest.path`),'/logs/server.log');
 await call('Emulation.setDeviceMetricsOverride',{width:1480,height:1050,deviceScaleFactor:1,mobile:false});
 const snap=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});fs.writeFileSync(path.join(root,'preview.png'),Buffer.from(snap.data,'base64'));
 const rebindState=await js(`(async()=>{ await rebind(new File(['different'],'wrong.log'),window.mockSummary); return {staleFile:currentFile!==null,staleSummary:summary!==null,visible:!document.querySelector('#results').classList.contains('hidden'),warning:document.querySelector('#notice').textContent.includes('크기가')};})()`);
