@@ -45,13 +45,15 @@ jobs:
         run: |
           go build -trimpath -o jeus-lens .
           node tests/api-smoke.js
-      - name: Chromium UI smoke (when system Chromium exists)
+      - name: Ensure Chromium for full UI regression testing
         run: |
-          if [ -x /usr/bin/chromium ]; then
-            node tests/ui-smoke.js || node tests/ui-smoke.js
-          else
-            echo 'Chromium unavailable; UI smoke not executed on this runner'
+          if [ ! -x /usr/bin/chromium ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends chromium
           fi
+          /usr/bin/chromium --version
+      - name: Chromium UI smoke including SSH diagnostics and updater controls
+        run: node tests/ui-smoke.js
       - name: Compile Windows x64 application
         run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags='-s -w -H=windowsgui' -o JEUS_Lens_Windows_x64.exe .
       - uses: actions/upload-artifact@v4
