@@ -1,10 +1,10 @@
 # JEUS Lens
 
-**JEUS 로그 분석 도구 · v1.0.1 · Windows x64**
+**JEUS 로그 분석 도구 · v1.0.2 · Windows x64**
 
 JEUS/Java 서버 로그에서 예외, Oracle SQL 오류, 발생 시각 및 관련 로그를 찾아보는 로컬 분석 프로그램입니다. 로그 원본은 파일로 복사 저장하지 않고, 검색과 분석에 필요한 메타데이터만 보관합니다.
 
-[**최신 정식 릴리즈 다운로드**](https://github.com/P-JSL/JeusLogAnalyzer/releases/latest) · [v1.0.1 릴리즈](https://github.com/P-JSL/JeusLogAnalyzer/releases/tag/v1.0.1)
+[**최신 정식 릴리즈 다운로드**](https://github.com/P-JSL/JeusLogAnalyzer/releases/latest) · [v1.0.2 릴리즈](https://github.com/P-JSL/JeusLogAnalyzer/releases/tag/v1.0.2)
 
 **Windows 실행 파일은 Go 원본판과 Rust 백엔드판으로 구분됩니다.** Rust판은 기존 웹 화면을 그대로 내장하되 로그 분석 서버를 Rust로 독립 구현한 버전입니다. 두 파일은 릴리즈의 파일명에서 `Rust` 포함 여부로 구분할 수 있습니다.
 
@@ -23,7 +23,7 @@ JEUS/Java 서버 로그에서 예외, Oracle SQL 오류, 발생 시각 및 관�
 
 ## 1. 설치 및 실행
 
-1. [Releases](https://github.com/P-JSL/JeusLogAnalyzer/releases/tag/v1.0.1)에서 Go판 `JEUS_Lens_Windows_x64_v1.0.1.zip` 또는 Rust판 `JEUS_Lens_Rust_Windows_x64_v1.0.1.zip`을 선택해 다운로드하고 압축을 풉니다. 각 EXE를 개별 다운로드해도 됩니다.
+1. [Releases](https://github.com/P-JSL/JeusLogAnalyzer/releases/tag/v1.0.2)에서 Go판 `JEUS_Lens_Windows_x64_v1.0.2.zip` 또는 Rust판 `JEUS_Lens_Rust_Windows_x64_v1.0.2.zip`을 선택해 다운로드하고 압축을 풉니다. 각 EXE를 개별 다운로드해도 됩니다.
 2. **선택한 ZIP 내부의 EXE를 실행**합니다. 기본 브라우저에서 로컬 주소 `http://127.0.0.1:<임의 포트>/`가 열립니다.
 3. 로그 파일을 선택하면 별도 Java/Python 설치 없이 분석할 수 있습니다.
 
@@ -105,4 +105,4 @@ EXE는 **코드 서명되지 않았습니다.** 출처와 SHA-256 체크섬을 �
 - 로그 형식에 따라 메시지/타임스탬프 인식이 달라질 수 있으며, 운영 서버 SSH/SFTP 연결 및 Windows 실기 호환성은 환경별 검증이 필요합니다.
 - 이 도구는 JEUS 제조사의 공식 인증 제품이 아닙니다.
 
-개발 및 보안 관련 문서: [아키텍처](docs/ARCHITECTURE.md) · [보안](SECURITY.md) · [검증 범위](REVIEW.md) · [v1.0.1 릴리즈 노트](RELEASE_NOTES_v1.0.1.md)
+개발 및 보안 관련 문서: [아키텍처](docs/ARCHITECTURE.md) · [보안](SECURITY.md) · [검증 범위](REVIEW.md) · [v1.0.2 릴리즈 노트](RELEASE_NOTES_v1.0.2.md)
