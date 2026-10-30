@@ -55,6 +55,27 @@ def surge():
 def utf16():
     log="[2026.10.23 10:00:00][2] prepared\n[2026.10.23 10:00:01][0] java.sql.SQLException: ORA-00001\nCaused by: java.sql.SQLIntegrityConstraintViolationException\n"
     return b"\xff\xfe"+log.encode("utf-16le")
+def oversized():
+    # Operational logs include >128 KiB multi-line events.
+    pad="trace padding="+("X"*215000)
+    return ("[2026.10.23 11:00:01][0] java.sql.SQLException: ORA-00904\n"+pad+
+        "\nCaused by: java.sql.SQLSyntaxErrorException: ORA-00904\n"+
+        "[2026.10.23 11:00:02][2] completed\n").encode()
+
+def boundary():
+    # One huge line and subsequent events cross many transport buffer boundaries.
+    return ("[2026.10.23 12:00:01][2] first\n"+
+        "[2026.10.23 12:00:02][0] "+("Q"*65531)+"\n"+
+        "Caused by: java.sql.SQLException ORA-00001\n"+
+        "[2026.10.23 12:00:03][1] warning\n").encode()
+
+def utf16be():
+    lines="[2026.10.23 10:00:00][1] hello\n[2026.10.23 10:00:01][0] ORA-01031\n"
+    return b"\xfe\xff"+lines.encode("utf-16be")
+
+def many_events():
+    return ("".join(f"[2026.10.23 12:{(i//60)%60:02d}:{i%60:02d}][2] Synthetic event {i}\n" for i in range(20000))).encode()
+
 def check_one(name,blob,encoding,go,rust):
     id=hashlib.md5((name+str(len(blob))).encode()).hexdigest()
     entries=[]
@@ -73,7 +94,8 @@ def check_one(name,blob,encoding,go,rust):
         assert len(raw)==n*24
         allpage=http(url,f"/api/page?id={id}&filterId=all&page=1")
         assert allpage["total"]==n
-        for g in ["sql","sql:1","sql:2","error","review","warning","info","otherError"]:
+        for g in ["sql","sql:1","sql:2","error","review","warning","info","otherError"] + (
+            ["issue:"+meta["issues"][0]["id"]] if meta.get("issues") else []):
             fid=http(url,"/api/filter",method="POST",data=json.dumps({"id":id,"group":g,"query":""}).encode())
             page=http(url,f"/api/page?id={id}&filterId={fid['filterId']}&page=1")
             assert page["total"]==fid["total"]
@@ -102,7 +124,15 @@ def main():
         a=run(sys.argv[1],root/"go")
         b=run(sys.argv[2],root/"rust")
         try:
-            for test in [("nested",fixture(),"auto"),("surge",surge(),"auto"),("utf16",utf16(),"auto")]:
+            for test in [
+                ("nested",fixture(),"auto"),
+                ("surge",surge(),"auto"),
+                ("utf16",utf16(),"auto"),
+                ("utf16be",utf16be(),"auto"),
+                ("oversized",oversized(),"auto"),
+                ("boundary",boundary(),"auto"),
+                ("many",many_events(),"auto"),
+            ]:
                 check_one(*test,a,b)
             cp=(pathlib.Path(__file__).resolve().parent/"sample_cp949.log").read_bytes()
             check_one("cp949",cp,"euc-kr",a,b)
