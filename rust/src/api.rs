@@ -8,7 +8,7 @@ use rand::RngCore;
 use serde::Deserialize;
 use serde_json::{json,Value};
 use sha2::{Sha256,Digest};
-use std::{collections::HashMap,fs::{self,File},io::{Read,Seek,SeekFrom,Write},path::{Path,PathBuf},sync::{Arc,Mutex,atomic::{AtomicU64,Ordering}},time::{SystemTime,UNIX_EPOCH},};
+use std::{collections::HashMap,fs::{self,File},io::{BufReader,BufWriter,Read,Seek,SeekFrom,Write},path::{Path,PathBuf},sync::{Arc,Mutex,atomic::{AtomicU64,Ordering}},time::{SystemTime,UNIX_EPOCH},};
 use tokio::net::TcpListener;
 use rust_embed::RustEmbed;
 use chrono::Utc;
@@ -156,9 +156,9 @@ async fn filter(State(app):State<App>,Json(q):Json<FilterReq>)->Response{
  if !["all","sql","otherError","error","review","warning","info"].contains(&q.group.as_str())&&selected_issue.is_none()&&!q.group.strip_prefix("sql:").is_some_and(|x|x.parse::<u8>().is_ok_and(|v|(1..=8).contains(&v))){return err(StatusCode::BAD_REQUEST,"invalid group")}
  if q.group=="all"{return Json(json!({"filterId":"all","total":meta.counts.all})).into_response()}
  let fid=token();let path=app.root.join(&q.id).join(format!("filter-{fid}.tmp"));
- let mut source=match records_file(&app,&q.id){Ok(f)=>f,Err(e)=>return e};
- let mut selected=match selected_issue{Some(_)=>match File::open(app.root.join(&q.id).join("issues.bin")){Ok(f)=>Some(f),Err(_)=>return err(StatusCode::NOT_FOUND,"issue index unavailable")},None=>None};
- let mut out=match File::create(&path){Ok(f)=>f,Err(_)=>return err(StatusCode::INTERNAL_SERVER_ERROR,"filter write failed")};
+ let mut source=match records_file(&app,&q.id){Ok(f)=>BufReader::with_capacity(1024*1024,f),Err(e)=>return e};
+ let mut selected=match selected_issue{Some(_)=>match File::open(app.root.join(&q.id).join("issues.bin")){Ok(f)=>Some(BufReader::with_capacity(512*1024,f)),Err(_)=>return err(StatusCode::NOT_FOUND,"issue index unavailable")},None=>None};
+ let mut out=match File::create(&path){Ok(f)=>BufWriter::with_capacity(1024*1024,f),Err(_)=>return err(StatusCode::INTERNAL_SERVER_ERROR,"filter write failed")};
  let mut total=0u64;let mut b=[0;24];let mut issue=[0;8];
  for index in 0..meta.counts.all{
   if source.read_exact(&mut b).is_err(){let _=fs::remove_file(path);return err(StatusCode::CONFLICT,"damaged index")}
