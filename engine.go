@@ -222,7 +222,7 @@ type diskRecord struct {
 	Level    byte // 1=error,2=warning,3=info
 	Category byte // 1=SQL exception; 0=other
 	Subtype  byte // 0=none,1=syntax,2=constraint,3=connection,4=timeout,5=concurrency,6=resource,7=permission,8=other SQL
-	Reserved byte
+	Reserved byte // bit0: informational/warning event with recorded failure evidence (v6.5+)
 }
 
 func writeRecord(w io.Writer, r diskRecord) error {
@@ -234,11 +234,12 @@ func writeRecord(w io.Writer, r diskRecord) error {
 	b[20] = r.Level
 	b[21] = r.Category
 	b[22] = r.Subtype
+	b[23] = r.Reserved
 	_, e := w.Write(b[:])
 	return e
 }
 func (r diskRecord) JSON(index int64) map[string]any {
-	return map[string]any{"index": index, "offset": r.Offset, "length": r.Length, "line": r.Line, "endLine": r.EndLine, "level": r.Level, "category": r.Category, "sqlType": sqlTypeName(r.Subtype)}
+	return map[string]any{"index": index, "offset": r.Offset, "length": r.Length, "line": r.Line, "endLine": r.EndLine, "level": r.Level, "category": r.Category, "sqlType": sqlTypeName(r.Subtype), "review": r.Reserved&1 != 0}
 }
 
 func readRecord(f *os.File, number int64) (diskRecord, error) {
@@ -247,7 +248,7 @@ func readRecord(f *os.File, number int64) (diskRecord, error) {
 	if err != nil {
 		return diskRecord{}, err
 	}
-	return diskRecord{Offset: binary.LittleEndian.Uint64(b[0:8]), Length: binary.LittleEndian.Uint32(b[8:12]), Line: binary.LittleEndian.Uint32(b[12:16]), EndLine: binary.LittleEndian.Uint32(b[16:20]), Level: b[20], Category: b[21], Subtype: b[22]}, nil
+	return diskRecord{Offset: binary.LittleEndian.Uint64(b[0:8]), Length: binary.LittleEndian.Uint32(b[8:12]), Line: binary.LittleEndian.Uint32(b[12:16]), EndLine: binary.LittleEndian.Uint32(b[16:20]), Level: b[20], Category: b[21], Subtype: b[22], Reserved: b[23]}, nil
 }
 
 type Counts struct {
@@ -257,6 +258,7 @@ type Counts struct {
 	Info       int64 `json:"info"`
 	SQL        int64 `json:"sql"`
 	OtherError int64 `json:"otherError"`
+	Review      int64 `json:"review"` // Explicitly non-error logs containing failure evidence.
 }
 type Pair struct {
 	Name  string `json:"name"`
@@ -433,6 +435,7 @@ type indexState struct {
 	end       uint32
 	explicit  byte
 	failure   bool
+	suspect   bool // Observed exception/error token; does not override an explicit INFO/WARN level.
 	sql       bool
 	message   string
 	signature string
@@ -473,7 +476,7 @@ func extractSignature(text string, sql bool) string {
 // exception class, plus the first relevant Java stack frame for non-SQL issues.
 // It does not hash arbitrary message bodies containing SQL literals or secrets.
 func issueFingerprint(st *indexState, level byte) (uint64, string) {
-	if level != 1 && !st.sql {
+	if level != 1 && !st.sql && !st.suspect {
 		return 0, ""
 	}
 	code := st.code
@@ -644,6 +647,8 @@ func buildIndexStreamContext(ctx context.Context, source io.Reader, dir, enc str
 			return errors.New("이벤트가 너무 짧아 인덱스가 512MiB를 초과합니다. 로그 분할 또는 필터링 후 다시 시도해 주세요")
 		}
 		counts.All++
+		review := level != 1 && state.suspect
+		if review { counts.Review++ }
 		switch level {
 		case 1:
 			counts.Error++
@@ -709,6 +714,7 @@ func buildIndexStreamContext(ctx context.Context, source io.Reader, dir, enc str
 			}
 		}
 		rec := diskRecord{Offset: state.offset, Length: uint32(length), Line: state.line, EndLine: state.end, Level: level, Category: cat, Subtype: state.sqlType}
+		if review {rec.Reserved = 1}
 		issueID, issueName := issueFingerprint(state, level)
 		if issueID != 0 {
 			if entry, ok := issues[issueID]; ok {
@@ -816,8 +822,9 @@ func buildIndexStreamContext(ctx context.Context, source io.Reader, dir, enc str
 			}
 		}
 		// An explicit level is authoritative; failure inference matters only for unlevelled records.
-		if state.explicit == 0 && likelyFailure(clean) {
-			state.failure = true
+		if likelyFailure(clean) || oraCode.MatchString(clean) {
+			state.suspect = true
+			if state.explicit == 0 {state.failure = true}
 		}
 		// An exception's root cause and first relevant frame produce a stable
 		// issue identity even when timestamps, IDs and messages change.
@@ -833,7 +840,7 @@ func buildIndexStreamContext(ctx context.Context, source io.Reader, dir, enc str
 				state.frame = m[1]
 			}
 		}
-		if (state.explicit == 1 || state.failure || state.sql) && (state.signature == "" || (state.sql && state.code != "")) {
+		if (state.explicit == 1 || state.failure || state.sql || state.suspect) && (state.signature == "" || (state.sql && state.code != "")) {
 			state.signature = extractSignature(clean, state.sql)
 		}
 		offset += uint64(n)
