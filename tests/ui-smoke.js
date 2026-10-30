@@ -8,6 +8,7 @@ const assert=require('node:assert/strict');
 const root=path.join(__dirname,'..'),html=fs.readFileSync(path.join(root,'web/index.html'),'utf8'),css=fs.readFileSync(path.join(root,'web/style.css'),'utf8'),parser=fs.readFileSync(path.join(root,'web/parser.js'),'utf8'),app=fs.readFileSync(path.join(root,'web/app.js'),'utf8');
 const diagnostics=fs.readFileSync(path.join(root,'web/diagnostics.js'),'utf8');
 const remoteUI=fs.readFileSync(path.join(root,'web/remote-sftp.js'),'utf8');
+const remoteProfilesUI=fs.readFileSync(path.join(root,'web/remote-profiles.js'),'utf8');
 const updaterUI=fs.readFileSync(path.join(root,'web/updater.js'),'utf8');
 const delay=t=>new Promise(r=>setTimeout(r,t));
 const captureDocs=process.env.JEUS_LENS_DOC_SCREENSHOTS==='1';
@@ -43,7 +44,7 @@ window.fetch=async function(input,opts={}){
   if(route==='/api/update/apply'){window.updateInstallCount=(window.updateInstallCount||0)+1;return message({status:'installing',version:'1.0.3'})}
   if(route==='/api/remote-trace'){window.remoteRequest=JSON.parse(opts.body);if(window.mockRemoteHang)return new Promise((resolve,reject)=>opts.signal.addEventListener('abort',()=>reject(new DOMException('Cancelled','AbortError')),{once:true}));const stages=window.mockRemoteFails?
     [{stage:'tcp',level:'info',code:'CONNECTING',message:'연결 시도'},{stage:'ssh',level:'error',code:'AUTH_FAILED',message:'사용자 인증 실패'}]:
-    [{stage:'tcp',level:'info',code:'CONNECTING',message:'연결 시도'},{stage:'auth',level:'success',code:'AUTHENTICATED',message:'계정 인증 완료'},{stage:'done',level:'success',code:'DONE',message:'종료',size:15,offset:0,data:btoa('REMOTE LOG SAFE'),partial:false}];
+    [{stage:'tcp',level:'info',code:'CONNECTING',message:'연결 시도'},{stage:'auth',level:'success',code:'AUTHENTICATED',message:'계정 인증 완료'},{stage:'done',level:'success',code:'DONE',message:'종료',size:15,offset:0,data:btoa(window.mockRemoteText||'REMOTE LOG SAFE'),partial:false}];
     return new Response(stages.map(x=>JSON.stringify(x)).join(String.fromCharCode(10))+String.fromCharCode(10),{status:200,headers:{'Content-Type':'application/x-ndjson'}})}
   if(route==='/api/remote-tail'){window.remoteRequest=JSON.parse(opts.body);return message({size:15,offset:0,data:btoa('REMOTE LOG SAFE'),partial:false})}
   throw Error('unknown mock route: '+route);
@@ -55,7 +56,7 @@ const pages=await until(async()=>{const r=await fetch(`http://127.0.0.1:${port}/
 ws=new WebSocket(pages[0].webSocketDebuggerUrl);await new Promise(r=>ws.addEventListener('open',r,{once:true}));ws.addEventListener('message',e=>{const m=JSON.parse(e.data);if(pending.has(m.id)){const q=pending.get(m.id);pending.delete(m.id);m.error?q.reject(Error(JSON.stringify(m.error))):q.resolve(m.result);}});await call('Runtime.enable');await call('Page.enable');
 await js(`document.open();document.write(${JSON.stringify(html)});document.close();`);
 await js(`(()=>{let s=document.createElement('style');s.textContent=${JSON.stringify(css)};document.head.append(s);})()`);
-await js(parser);await js(diagnostics);await js(mock);await js(app);await js(remoteUI);await js(updaterUI);
+await js(parser);await js(diagnostics);await js(mock);await js(app);await js(remoteProfilesUI);await js(remoteUI);await js(updaterUI);
 if(captureDocs)await call('Emulation.setDeviceMetricsOverride',{width:1480,height:1024,deviceScaleFactor:1,mobile:false});
 await saveDocsScreenshot('01-file-import.png','.heading');
 const lines=['[2026.10.23 09:00:00][0] [m-1] [APP-3333] SQL error ORA-00904 invalid column','[2026.10.23 09:00:01][2] [m-1] [APP-3334] request complete'];
@@ -119,6 +120,28 @@ await js(`document.querySelector('#remoteDisconnect').click();window.mockRemoteH
 assert.match(await js(`document.querySelector('#remoteStatus').textContent`),/중단/);
 assert.equal(await js(`document.querySelector('#remoteConnect').disabled`),false);
 
+
+// WebtoB 5 dated access/error/system logs, dynamic source switching, no password storage.
+await js(`(()=>{const service=document.querySelector('#remoteService');service.value='webtob';service.dispatchEvent(new Event('change'));})()`);
+assert.match(await js(`document.querySelector('#remoteServiceHint').textContent`),/access_YYYYMMDD/);
+assert.match(await js(`document.querySelector('#remotePath').placeholder`),/access_20261030\.log/);
+await js(`(()=>{document.querySelector('#remoteTargetName').value='WebtoB 운영';document.querySelector('#remotePath').value='/opt/webtob/log/access_20261030.log';document.querySelector('#remoteTargetSave').click()})()`);
+assert.equal(await js(`document.querySelector('#remoteTargetList').options.length`),2);
+await js(`(()=>{const service=document.querySelector('#remoteService');service.value='nginx';service.dispatchEvent(new Event('change'));document.querySelector('#remoteTargetName').value='Nginx 테스트';document.querySelector('#remoteHost').value='10.1.2.3';document.querySelector('#remotePath').value='/var/log/nginx/error.log';document.querySelector('#remoteTargetList').value='';document.querySelector('#remoteTargetSave').click()})()`);
+assert.equal(await js(`document.querySelector('#remoteTargetList').options.length`),3);
+await js(`(()=>{document.querySelector('#remoteTargetList').value='target-1';document.querySelector('#remoteTargetList').dispatchEvent(new Event('change'))})()`);
+assert.equal(await js(`document.querySelector('#remoteService').value`),'webtob');
+assert.equal(await js(`document.querySelector('#remotePath').value`),'/opt/webtob/log/access_20261030.log');
+assert.equal(await js(`document.querySelector('#remotePass').value`),'');
+await js(`(()=>{window.mockRemoteText=['127.0.0.1 [30/Oct/2026:12:00:00 +0900] "GET /health HTTP/1.1" 200 12','127.0.0.1 [30/Oct/2026:12:00:01 +0900] "POST /v1 HTTP/1.1" 500 0','127.0.0.1 [30/Oct/2026:12:00:02 +0900] "GET /missing HTTP/1.1" 404 0'].join('\\n');document.querySelector('#remotePass').value='temporary';document.querySelector('#remoteConnect').click()})()`);
+await until(()=>js(`document.querySelector('#remoteLogSummary').textContent.includes('5xx 1')`));
+assert.match(await js(`document.querySelector('#remoteLogSummary').textContent`),/4xx 1/);
+await js(`(()=>{document.querySelector('#remoteLineFilter').value='error';document.querySelector('#remoteLineFilter').dispatchEvent(new Event('change'))})()`);
+assert.match(await js(`document.querySelector('#remoteOutput').textContent`),/POST \/v1/);
+assert.doesNotMatch(await js(`document.querySelector('#remoteOutput').textContent`),/GET \/health/);
+await js(`(()=>{document.querySelector('#remoteTargetRemove').click();document.querySelector('#remoteLineFilter').value='all';window.mockRemoteText=''})()`);
+assert.equal(await js(`document.querySelector('#remoteTargetList').options.length`),2);
+// End generalized remote preview and ephemeral session tests.
 
 if(captureDocs)await js(`(()=>{document.querySelector('#remoteHost').value='';document.querySelector('#remoteUser').value='';document.querySelector('#remotePass').value='';document.querySelector('#remoteFingerprint').value='';document.querySelector('#remotePath').value='';document.querySelector('#remoteOutput').textContent='';document.querySelector('#remoteStatus').textContent='서버 호스트키를 확인하고 읽기 전용 계정으로 접속합니다.';})()`);
 await saveDocsScreenshot('04-remote-sftp.png','.remote-panel');
