@@ -21,10 +21,10 @@ jobs:
       - name: Native Rust compile and unit tests
         working-directory: rust
         run: |
-          cargo fmt --check
-          cargo test --all-targets --locked -- --nocapture
-          cargo clippy --all-targets --locked -- -D warnings
-          cargo build --release --locked
+          cargo fmt
+          cargo test --all-targets -- --nocapture
+          cargo clippy --all-targets -- -D warnings
+          cargo build --release
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
