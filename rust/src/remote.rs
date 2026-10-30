@@ -19,7 +19,9 @@ fn check(q:&RemoteReq)->Result<(),String>{
  // Cached regular expression: O(filename length) input validation.
  static LOG_FILENAME:std::sync::OnceLock<regex::Regex>=std::sync::OnceLock::new();
  let filename=q.path.rsplit('/').next().unwrap_or("");
- let allowed=LOG_FILENAME.get_or_init(||regex::Regex::new(r"(?i)^(?:[^/]+\.(?:log|out|txt|trace|err|error|audit|jsonl|ndjson)(?:[._-][0-9][0-9A-Za-z._-]{0,31})?|(?:access_log|error_log|syslog|messages|secure|maillog)(?:[._-][0-9][0-9A-Za-z._-]{0,31})?)$").expect("valid fixed log filename policy")).is_match(filename);
+ let lower=filename.to_ascii_lowercase();
+ let compressed=[".gz",".zip",".bz2",".xz",".zst",".7z"].iter().any(|suffix|lower.ends_with(suffix));
+ let allowed=!compressed&&LOG_FILENAME.get_or_init(||regex::Regex::new(r"(?i)^(?:[^/]+\.(?:log|out|txt|trace|err|error|audit|jsonl|ndjson)(?:[._-][0-9][0-9A-Za-z._-]{0,31})?|(?:access_log|error_log|syslog|messages|secure|maillog)(?:[._-][0-9][0-9A-Za-z._-]{0,31})?)$").expect("valid fixed log filename policy")).is_match(filename);
  if !allowed||q.max_bytes==0||q.max_bytes>512*1024{return Err("지원하지 않는 텍스트 로그 파일명 또는 조회 크기입니다. 압축 파일은 지원하지 않습니다".into())}
  Ok(())
 }
