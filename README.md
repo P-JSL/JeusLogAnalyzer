@@ -23,8 +23,8 @@ JEUS/Java 서버 로그에서 예외, Oracle SQL 오류, 발생 시각 및 관�
 
 ## 1. 설치 및 실행
 
-1. [Releases](https://github.com/P-JSL/JeusLogAnalyzer/releases/tag/v1.0.0)에서 `JEUS_Lens_Windows_x64_v1.0.0.zip`을 다운로드하고 압축 해제합니다. 또는 `JEUS_Lens_Windows_x64.exe`를 직접 받습니다.
-2. **`JEUS_Lens_Windows_x64.exe`를 실행**합니다. 기본 브라우저에서 로컬 주소 `http://127.0.0.1:<임의 포트>/`가 열립니다.
+1. [Releases](https://github.com/P-JSL/JeusLogAnalyzer/releases/tag/v1.0.0)에서 Go판 `JEUS_Lens_Windows_x64_v1.0.0.zip` 또는 Rust판 `JEUS_Lens_Rust_Windows_x64_v1.0.0.zip`을 선택해 다운로드하고 압축을 풉니다. 각 EXE를 개별 다운로드해도 됩니다.
+2. **선택한 ZIP 내부의 EXE를 실행**합니다. 기본 브라우저에서 로컬 주소 `http://127.0.0.1:<임의 포트>/`가 열립니다.
 3. 로그 파일을 선택하면 별도 Java/Python 설치 없이 분석할 수 있습니다.
 
 EXE는 **코드 서명되지 않았습니다.** 출처와 SHA-256 체크섬을 확인하고 회사의 보안 정책에 따라 실행하세요. Windows 실기 환경에 대한 별도 검증은 아직 완료되지 않았습니다.
