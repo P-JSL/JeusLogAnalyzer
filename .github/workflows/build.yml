@@ -38,6 +38,7 @@ jobs:
           node --check web/diagnostics.js
           node --check web/search-worker.js
           node --check web/remote-sftp.js
+          node --check web/updater.js
       - name: JavaScript parser and metadata search tests
         run: node --test tests/parser.test.js tests/search-worker.test.js tests/diagnostics.test.js
       - name: Build backend and exercise HTTP API
