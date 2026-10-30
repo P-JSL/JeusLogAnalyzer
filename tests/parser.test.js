@@ -51,3 +51,13 @@ test('No execution or HTML interpretation of suspicious text',()=>{
  const ev=parse(['[2026.10.23 10:00:00][0] [x-1] [SERVER-3333] <img src=x onerror=alert(1)>']);
  assert.ok(ev[0].message.includes('<img src=x onerror=alert(1)>'));
 });
+
+test('actual MES JEUS seven-bracket header captures thread and request identity',()=>{
+ const line='[2026-10-22 00:00:00.025][INFO][DefaultDevScheduler_Worker-1][102][TESTTRACE0000000000000000000000000001][SchedulerMessage][SQLService] - [ORACLE] Begin SELECT 1 FROM DUAL';
+ const h=header(line);assert.ok(h);assert.equal(h.level,'info');assert.equal(h.thread,'DefaultDevScheduler_Worker-1');
+ assert.equal(h.contextId,'TESTTRACE0000000000000000000000000001');assert.equal(h.component,'SQLService');
+ assert.equal(h.message,'[ORACLE] Begin SELECT 1 FROM DUAL');
+ const e=parse([line,'Caused by: java.sql.SQLException: ORA-12899 too large','[2026-10-22 00:00:00.027][ERROR][webtob-listener-hth0-5][101][REQ01][HttpMessage][MessageProxy2] - failed']);
+ assert.equal(e.length,2);assert.equal(e[0].level,'info');assert.equal(e[0].contextId,h.contextId);
+ assert.equal(e[1].thread,'webtob-listener-hth0-5');assert.equal(e[1].level,'error');
+});

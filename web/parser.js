@@ -1,6 +1,8 @@
 /* Pure parser shared with Web Worker and Node.js regression tests. */
 (function (root) {
   'use strict';
+  // MES/SmartUX JEUS logs: [time][level][thread][numeric id][request id][kind][component] - message.
+  const PLATFORM = /^\[(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}[ T]\d{2}:\d{2}:\d{2}(?:[.:,]\d{3})?)\]\[([0-7]|SEVERE|WARNING|WARN|INFO|ERROR|FATAL|DEBUG|TRACE)\]\[([^\]\r\n]{1,256})\]\[(\d{1,12})\]\[([^\]\r\n]{1,160})\]\[([^\]\r\n]{1,80})\]\[([^\]\r\n]{1,160})\]\s*-\s*(.*)$/i;
   const JEUS = /^\[(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}[ T]\d{2}:\d{2}:\d{2}(?:[.:,]\d{3})?(?:Z|[+-]\d{2}:?\d{2})?)\]\s*\[([0-7]|SEVERE|WARNING|WARN|INFO|CONFIG|FINE|FINER|FINEST|ALL|ERROR|FATAL|DEBUG|TRACE)\]\s*(?:\[([^\]\r\n]*)\])?\s*(?:\[([A-Za-z][\w.-]*-\d+)\])?\s*(.*)$/i;
   const DATED = /^\[?(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}[ T]\d{2}:\d{2}:\d{2}(?:[.:,]\d{3})?(?:Z|[+-]\d{2}:?\d{2})?)\]?\s*[-|:]?\s*(?:\[?(SEVERE|ERROR|FATAL|WARN(?:ING)?|INFO|DEBUG|TRACE|CONFIG|FINE(?:R|ST)?|ALL)\]?)?\s*(.*)$/i;
   const LEVEL_LINE = /^\s*\[(ERROR|SEVERE|FATAL|WARN(?:ING)?|INFO|DEBUG|TRACE)\]\s*(.*)$/i;
@@ -11,7 +13,9 @@
   function clean(s){return String(s ?? '').replace(/\r$/, '');}
   function hasFailure(text){return EXCEPTION.test(text) || /^\s*(?:Caused by\s*:|<<__Exception__>>|Exception in thread\b)/im.test(text);}
   function header(line){
-    const s=clean(line); let m=JEUS.exec(s);
+    const s=clean(line); let m=PLATFORM.exec(s);
+    if(m){return {time:m[1],level:SEVERITIES[m[2].toLowerCase()],source:m[2],thread:m[3],sequence:m[4],contextId:m[5],kind:m[6],component:m[7],code:'',message:m[8],isHeader:true};}
+    m=JEUS.exec(s);
     if(m){return {time:m[1],level:SEVERITIES[m[2].toLowerCase()],source:m[2],thread:m[3]||'',code:m[4]||'',message:m[5]||'',isHeader:true};}
     m=DATED.exec(s);
     if(m){return {time:m[1],level:m[2]?SEVERITIES[m[2].toLowerCase()]:null,source:m[2]||'',thread:'',code:'',message:m[3]||'',isHeader:true};}
@@ -51,7 +55,7 @@
       const h=a.head;const m=h?h.message:a.lines[0];
       const level=determineLevel(h,raw);
       const code=(h&&h.code)||((raw.match(MESSAGE_CODE)||[])[1]||'');
-      const event={id:a.firstLine,time:h?h.time:'',level,code,thread:h?h.thread:'',message:(m||'').trim()||a.lines[0].trim(),line:a.firstLine,endLine,raw};
+      const event={id:a.firstLine,time:h?h.time:'',level,code,thread:h?h.thread:'',contextId:h?.contextId||'',component:h?.component||'',message:(m||'').trim()||a.lines[0].trim(),line:a.firstLine,endLine,raw};
       event.group=level==='error'?signature(event):'';
       this.onEntry(event);
     }

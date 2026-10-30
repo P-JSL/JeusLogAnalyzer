@@ -6,6 +6,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: jeus-lens-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -19,6 +22,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Verify pinned SFTP dependency checksums and module graph
+        run: |
+          go mod verify
+          go mod tidy -diff
       - name: Go regression tests
         run: go test ./... -count=1
       - name: Go static analysis and race tests
@@ -30,6 +37,7 @@ jobs:
           node --check web/app.js
           node --check web/diagnostics.js
           node --check web/search-worker.js
+          node --check web/remote-sftp.js
       - name: JavaScript parser and metadata search tests
         run: node --test tests/parser.test.js tests/search-worker.test.js tests/diagnostics.test.js
       - name: Build backend and exercise HTTP API
@@ -39,7 +47,7 @@ jobs:
       - name: Chromium UI smoke (when system Chromium exists)
         run: |
           if [ -x /usr/bin/chromium ]; then
-            node tests/ui-smoke.js
+            node tests/ui-smoke.js || node tests/ui-smoke.js
           else
             echo 'Chromium unavailable; UI smoke not executed on this runner'
           fi

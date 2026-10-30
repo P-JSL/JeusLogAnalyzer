@@ -3,7 +3,7 @@ const $=id=>document.getElementById(id);
 const fmt=n=>Number(n||0).toLocaleString('ko-KR');
 const percent=(n,all)=>all?((n/all)*100).toFixed(1)+'%':'0%';
 const prettyBytes=n=>n>=1024**3?(n/1024**3).toFixed(2)+' GiB':n>=1024**2?(n/1024**2).toFixed(2)+' MiB':n>=1024?(n/1024).toFixed(1)+' KiB':n+' B';
-const label={error:'오류',warning:'경고',info:'일반',sql:'SQL 예외',otherError:'기타 오류'};
+const label={error:'오류',warning:'경고',info:'일반',sql:'SQL 예외',otherError:'기타 오류',review:'검토 후보'};
 let pendingRebind=null,currentFile=null,summary=null,activeFilter='all',searchWorker=null,searchIds=null,filterId='all',currentPage=1,lastPage=1,rows=[],detail=null,searchHandle=null,abortImport=null,operation=0,history=[],pageRequest=0,matchedTotal=0,detailRequest=0;
 const fileInput=$('fileInput'),drop=$('dropZone');
 function announce(message,error=false){$('notice').textContent=message;$('notice').classList.remove('hidden');$('notice').classList.toggle('error',error);}
@@ -25,7 +25,7 @@ async function start(file){if(!file)return;destroy();const run=operation;closeDe
  finally{clearInterval(statusTimer);if(run===operation)abortImport=null;}}
 function showSummary(m){$('results').classList.remove('hidden');$('fileName').textContent=m.name;$('fileMeta').textContent=`${prettyBytes(m.size)} · ${fmt(m.lines)}행 · 메타데이터 ${prettyBytes(m.metadataBytes||0)}`;$('encodingTag').textContent=m.encoding;$('scopeTag').textContent='원본 미보관 · 전수 인덱스';$('countAll').textContent=fmt(m.stats.all);$('countError').textContent=fmt(m.stats.error);$('countWarn').textContent=fmt(m.stats.warning);$('countInfo').textContent=fmt(m.stats.info);$('pctError').textContent='전체의 '+percent(m.stats.error,m.stats.all);$('pctWarn').textContent='전체의 '+percent(m.stats.warning,m.stats.all);$('pctInfo').textContent='전체의 '+percent(m.stats.info,m.stats.all);
  const ratios=[m.stats.error,m.stats.warning,m.stats.info].map(n=>m.stats.all?(n/m.stats.all*100):0);document.querySelectorAll('#distributionBar .segment').forEach((el,i)=>el.style.width=ratios[i]+'%');['barError','barWarn','barInfo'].forEach((id,i)=>$(id).textContent=ratios[i].toFixed(1)+'%');const issue=$('issueList');issue.replaceChildren();const issueData=m.issueVersion===1?(m.issues||[]):(m.top||[]);$('topIssueCount').textContent=m.issueVersion===1?'상위 8개 · 클릭하여 필터':'상위 8개';for(const p of issueData.slice(0,8)){const item=document.createElement(m.issueVersion===1?'button':'div');if(m.issueVersion===1){item.type='button';item.title=`처음 이벤트 #${fmt(p.firstEvent+1)} · 마지막 이벤트 #${fmt(p.lastEvent+1)}`;item.addEventListener('click',()=>selectIssue(p));}item.className='issue-item';const name=document.createElement('span');name.textContent=p.name;const num=document.createElement('b');num.textContent=fmt(p.count);item.append(name,num);issue.append(item);}if(!issue.childElementCount){const p=document.createElement('p');p.className='no-issues';p.textContent='집계된 오류가 없습니다.';issue.append(p);}
- $('sqlCount').textContent=fmt(m.stats.sql);$('otherErrorCount').textContent=fmt(m.stats.otherError);$('sqlTopList').replaceChildren();for(const p of (m.sqlTop||[])){const item=document.createElement('span');item.className='sql-chip';item.textContent=`${p.name} · ${fmt(p.count)}`;$('sqlTopList').append(item);}
+ $('reviewCount').textContent=fmt(m.stats.review||0);$('sqlCount').textContent=fmt(m.stats.sql);$('otherErrorCount').textContent=fmt(m.stats.otherError);$('sqlTopList').replaceChildren();for(const p of (m.sqlTop||[])){const item=document.createElement('span');item.className='sql-chip';item.textContent=`${p.name} · ${fmt(p.count)}`;$('sqlTopList').append(item);}
  $('sqlTypeList').replaceChildren();for(const t of (m.sqlTypes||[])){const item=document.createElement('span');item.className='sql-chip';item.textContent=`${t.name}: ${fmt(t.count)}건`;$('sqlTypeList').append(item);}
  renderHotspots(m);
  renderErrorSurges(m);
@@ -87,8 +87,8 @@ async function showIndexedEvent(index){
   showDetail(ev);
  }catch(e){if(run===operation&&request===detailRequest)announce('오류 이벤트 조회 실패: '+e.message,true);}
 }
-async function readRow(rec){if(!currentFile)throw Error('원본 로그 파일을 먼저 선택해 주세요.');const offset=Number(rec.offset),length=Number(rec.length);if(!Number.isSafeInteger(offset)||!Number.isSafeInteger(length)||offset<0||offset+length>currentFile.size)throw Error('파일 내용과 메타데이터가 일치하지 않습니다. 다시 분석해 주세요.');const limit=Math.min(length,128*1024);const buf=await currentFile.slice(offset,offset+limit).arrayBuffer();let raw=new TextDecoder(summary.encoding,{fatal:false}).decode(buf).replace(/\r?\n$/,'');const first=raw.split('\n',1)[0];const h=JeusParser.header(first);const code=(raw.match(/\b(?:ORA|PLS)-\d{4,5}\b/i)||[])[0]||h?.code||((raw.match(/\b[A-Za-z][\w.-]*-\d{3,}\b/)||[])[0]||'');const sqlState=(raw.match(/\bSQL\s*STATE\s*[:=]?\s*([A-Za-z0-9]{5})/i)||[])[1]||'';const rootCause=(raw.match(/Caused by:[^\r\n]*/g)||[]).at(-1)||'';const message=(h?.message||first).trim().slice(0,1000);return {...rec,level:rec.level===1?'error':rec.level===2?'warning':'info',category:rec.category===1?'sql':'other',time:h?.time||'',thread:h?.thread||'',code,message,line:rec.line,endLine:rec.endLine,raw,truncated:length>limit,sqlCode:code,sqlState,rootCause};}
-async function materialize(meta){return Promise.all(meta.map(readRow));}
+async function readRow(rec,byteLimit=128*1024){if(!currentFile)throw Error('원본 로그 파일을 먼저 선택해 주세요.');const offset=Number(rec.offset),length=Number(rec.length);if(!Number.isSafeInteger(offset)||!Number.isSafeInteger(length)||offset<0||offset+length>currentFile.size)throw Error('파일 내용과 메타데이터가 일치하지 않습니다. 다시 분석해 주세요.');const limit=Math.min(length,byteLimit);const buf=await currentFile.slice(offset,offset+limit).arrayBuffer();let raw=new TextDecoder(summary.encoding,{fatal:false}).decode(buf).replace(/\r?\n$/,'');const first=raw.split('\n',1)[0];const h=JeusParser.header(first);const code=(raw.match(/\b(?:ORA|PLS)-\d{4,5}\b/i)||[])[0]||h?.code||((raw.match(/\b[A-Za-z][\w.-]*-\d{3,}\b/)||[])[0]||'');const sqlState=(raw.match(/\bSQL\s*STATE\s*[:=]?\s*([A-Za-z0-9]{5})/i)||[])[1]||'';const rootCause=(raw.match(/Caused by:[^\r\n]*/g)||[]).at(-1)||'';const message=(h?.message||first).trim().slice(0,1000);return {...rec,level:rec.level===1?'error':rec.level===2?'warning':'info',category:rec.category===1?'sql':'other',time:h?.time||'',thread:h?.thread||'',contextId:h?.contextId||'',component:h?.component||'',review:Boolean(rec.review),code,message,line:rec.line,endLine:rec.endLine,raw,truncated:length>limit,sqlCode:code,sqlState,rootCause};}
+async function materialize(meta){return Promise.all(meta.map(rec=>readRow(rec)));}
 async function drawPage(page){if(!summary)return;const run=operation,request=++pageRequest;try{let raw,total,pages,p;if(searchIds!==null){total=searchIds.length;pages=Math.max(1,Math.ceil(total/100));p=Math.max(1,Math.min(page,pages));const ids=searchIds.slice((p-1)*100,p*100);raw=await (await api('/api/page-by-ids',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:summary.id,indices:ids})})).json();}else{raw=await (await api(`/api/page?id=${summary.id}&filterId=${filterId}&page=${page}`)).json();total=raw.total;pages=raw.pages;p=raw.page;}
  const data=await materialize(raw.rows);if(run!==operation||request!==pageRequest)return;rows=data;matchedTotal=total;currentPage=p;lastPage=pages;renderRows(data,total);}catch(e){if(run===operation&&request===pageRequest)announce('페이지 조회 실패: '+e.message,true);}}
 function highlightText(target,text,query){
@@ -108,7 +108,7 @@ function renderRows(data,total){const body=$('logRows');body.replaceChildren();$
  td3.append(mes);
  if(query && !msgMatch){const lines=ev.raw.split('\n');const found=lines.findIndex(line=>sensitive?line.includes(query):line.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
   const hint=document.createElement('small');hint.className='search-hint';hint.textContent=found>=0?`원본 ${fmt(ev.line+found)}행에 검색어 포함`:'검색어가 원본 미리보기 범위 밖에 있을 수 있습니다';mes.append(hint);
- }if(ev.category==='sql'){const tag=document.createElement('span');tag.className='sql-inline';tag.textContent=ev.sqlType||'SQL';td3.append(tag);}const td4=document.createElement('td');td4.className='subtle-cell';td4.textContent=[ev.code,ev.thread].filter(Boolean).join(' / ')||'-';const td5=document.createElement('td');td5.className='right mono';td5.textContent=fmt(ev.line);tr.append(td1,td2,td3,td4,td5);tr.addEventListener('click',()=>showDetail(ev));tr.addEventListener('keydown',e=>{if(e.key==='Enter')showDetail(ev);});body.append(tr);}}
+ }if(ev.review){const reviewTag=document.createElement('span');reviewTag.className='sql-inline';reviewTag.textContent='오류 단서 검토';td3.append(reviewTag);}if(ev.category==='sql'){const tag=document.createElement('span');tag.className='sql-inline';tag.textContent=ev.sqlType||'SQL';td3.append(tag);}const td4=document.createElement('td');td4.className='subtle-cell';td4.textContent=[ev.code,ev.thread].filter(Boolean).join(' / ')||'-';const td5=document.createElement('td');td5.className='right mono';td5.textContent=fmt(ev.line);tr.append(td1,td2,td3,td4,td5);tr.addEventListener('click',()=>showDetail(ev));tr.addEventListener('keydown',e=>{if(e.key==='Enter')showDetail(ev);});body.append(tr);}}
 async function applyFilter(){if(!summary)return;const query=$('searchBox').value.trim();if(searchWorker){searchWorker.terminate();searchWorker=null;}searchIds=null;currentPage=1;const run=++operation;
  const group=activeFilter==='sql'?$('sqlSubtype').value:activeFilter;
  if(!query){try{const result=await(await api('/api/filter',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:summary.id,group,query:''})})).json();if(run!==operation)return;filterId=result.filterId;await drawPage(1);}catch(e){announce('필터 오류: '+e.message,true);}return;}
@@ -147,13 +147,14 @@ async function loadNearby(ev,request){
  try{const obj=await(await api('/api/page-by-ids',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:summary.id,indices})})).json();
   const events=await materialize(obj.rows);if(request!==detailRequest)return;
   target.replaceChildren();for(const item of events){const btn=document.createElement('button');btn.type='button';btn.className='neighbor';
-   const sameThread=Boolean(ev.thread&&item.thread&&ev.thread===item.thread);
+   const sameRequest=Boolean(ev.contextId&&item.contextId&&ev.contextId===item.contextId);
+    const sameThread=Boolean(ev.thread&&item.thread&&ev.thread===item.thread);
    const text=document.createElement('span');text.textContent=`${item.line}행 · ${item.time||'-'} · ${item.message.slice(0,95)}`;
-   const badge=document.createElement('b');badge.textContent=sameThread?'동일 스레드':'주변 로그';btn.append(text,badge);btn.addEventListener('click',()=>showDetail(item));target.append(btn);
+   const badge=document.createElement('b');badge.textContent=sameRequest?'동일 요청':sameThread?'동일 스레드':'주변 로그';btn.append(text,badge);btn.addEventListener('click',()=>showDetail(item));target.append(btn);
    // Only show other-event input values as leads, never as proven failing input.
-   if(sameThread){const nearby=JeusDiagnostics.diagnose(item.raw,item.line,item.level).evidence.slice(0,6);
+   if(sameRequest||sameThread){const nearby=JeusDiagnostics.diagnose(item.raw,item.line,item.level).evidence.slice(0,6);
     if(nearby.length){const note=document.createElement('div');note.className='nearby-proof';
-     note.textContent='동일 스레드 인접 이벤트의 기록값 (오류와 연관성 미확정): ' + nearby.map(x=>`${x.name}: ${x.value} [${x.line}행]`).join(' · ');target.append(note);}
+     note.textContent='인접 이벤트에서 기록된 입력값 (원인과 연관성 미확정): ' + nearby.map(x=>`${x.name}: ${x.value} [${x.line}행]`).join(' · ');target.append(note);}
    }
   }
  }catch(error){if(request===detailRequest)target.textContent='주변 로그 조회 불가: '+error.message;}
@@ -170,7 +171,7 @@ function renderEvidenceTrail(fault){
    target.append(button);
  }
 }
-function showDetail(e){detail=e;const request=++detailRequest;$('detailLevel').className='level-pill '+e.level;$('detailLevel').textContent=label[e.level]+(e.category==='sql'?' · SQL':'');$('detailMessage').textContent=e.message;$('detailTimestamp').textContent=e.time||'-';$('detailCode').textContent=e.code||'-';$('detailThread').textContent=e.thread||'-';$('detailLine').textContent=e.line===e.endLine?String(e.line):`${e.line} – ${e.endLine}`;$('detailSQLType').textContent=e.category==='sql'?(e.sqlType||'기타 SQL'):'-';$('detailSQLState').textContent=e.sqlState||'-';$('detailCause').textContent=e.rootCause||'-';const fault=JeusDiagnostics.diagnose(e.raw,e.line,e.level);
+function showDetail(e){detail=e;const request=++detailRequest;$('detailLevel').className='level-pill '+e.level;$('detailLevel').textContent=label[e.level]+(e.category==='sql'?' · SQL':'');$('detailMessage').textContent=e.message;$('detailTimestamp').textContent=e.time||'-';$('detailCode').textContent=e.code||'-';$('detailThread').textContent=e.thread||'-';$('detailContext').textContent=e.contextId||'-';$('detailReview').textContent=e.review?'명시적 오류 레벨이 아닌 이벤트에 오류 단서가 기록됨':'-';$('relatedRequest').classList.toggle('hidden',!e.contextId);$('detailLine').textContent=e.line===e.endLine?String(e.line):`${e.line} – ${e.endLine}`;$('detailSQLType').textContent=e.category==='sql'?(e.sqlType||'기타 SQL'):'-';$('detailSQLState').textContent=e.sqlState||'-';$('detailCause').textContent=e.rootCause||'-';const fault=JeusDiagnostics.diagnose(e.raw,e.line,e.level);
  const loc=fault.location;
  $('faultLocation').textContent=loc.kind==='stack'?`${loc.source}:${loc.sourceLine} · ${loc.method} (로그 ${loc.logLine}행)`: `원본 로그 ${loc.logLine}행 · 소스 코드 위치는 로그에 기록되지 않았습니다.`;
  $('faultCause').textContent=fault.rootCause?.message||'Java 스택 또는 SQL 로그에 명시적인 하위 원인이 없습니다.';
@@ -179,16 +180,28 @@ function showDetail(e){detail=e;const request=++detailRequest;$('detailLevel').c
   for(const name of ['유형','기록된 값','원본 줄']){const th=document.createElement('th');th.textContent=name;hrow.append(th);}thead.append(hrow);
   const body=document.createElement('tbody');for(const item of fault.evidence){const tr=document.createElement('tr');for(const val of [item.kind==='sql'?'SQL':item.name,item.value,String(item.line)]){const td=document.createElement('td');td.textContent=val;tr.append(td);}body.append(tr);}table.append(thead,body);data.append(table);
  }else{const p=document.createElement('p');p.className='data-empty';p.textContent='이 이벤트에 명시적으로 기록된 SQL·바인드값·입력 식별자가 없습니다. 실제 DB 레코드는 로그만으로 확인할 수 없습니다.';data.append(p);}
- renderFaultRaw(e,fault);renderEvidenceTrail(fault);void loadNearby(e,request);$('detailShade').classList.remove('hidden');$('detailPanel').classList.remove('hidden');$('closeDetail').focus();}
+ renderFaultRaw(e,fault);renderEvidenceTrail(fault);void loadNearby(e,request);$('detailShade').classList.remove('hidden');$('detailPanel').classList.remove('hidden');$('closeDetail').focus();
+  // Full evidence is loaded on demand only when the user opens the selected event.
+  // The 100-row list retains its original 128KiB bounded previews.
+  if(e.truncated && e.length>128*1024 && e.length<=8*1024*1024 && !e.fullDetailLoaded){
+    readRow(e,8*1024*1024).then(full=>{if(request!==detailRequest)return;showDetail({...full,fullDetailLoaded:true});}).catch(err=>{if(request===detailRequest)announce('전체 이벤트 조회 실패: '+err.message,true);});
+  }
+}
 function closeDetail(){detailRequest++;detail=null;$('detailShade').classList.add('hidden');$('detailPanel').classList.add('hidden');}
+$('relatedRequest').addEventListener('click',()=>{if(!detail?.contextId)return;const key=detail.contextId;closeDetail();$('searchBox').value=key;selectTab('all');});
 function safeFilename(s){return s.replace(/[^\p{L}\p{N}._-]/gu,'_').slice(0,80);}
 function csvSafe(s){return /^[\s\t\r\n]*[=+\-@]/.test(s)?"'"+s:s;}
-async function exportData(kind){if(!summary)return;const total=searchIds===null?null:searchIds.length;const max=5000;let events=[],pages=0;let limit=total===null?max:Math.min(total,max),actualTotal=total;try{
+function maskExportMessage(value){
+ return String(value||'').replace(/\b(password|passwd|token|secret|credential|authorization|cookie|api[_-]?key|session(?:id)?|LOT_ID|EQUIPMENT_ID)\b(\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;|]+)?/gi,'$1$2[REDACTED]');
+}
+async function exportData(kind){if(!summary)return;
+ const includeRaw=$('exportRaw').checked;
+ if(includeRaw && !confirm('원본 로그와 메시지에 비밀번호·토큰·업무 데이터 등이 포함될 수 있습니다. 원문을 포함하여 내보내시겠습니까?'))return;const total=searchIds===null?null:searchIds.length;const max=5000;let events=[],pages=0;let limit=total===null?max:Math.min(total,max),actualTotal=total;try{
  if(searchIds!==null){for(let pos=0;pos<limit;pos+=100){const ids=searchIds.slice(pos,pos+100);const obj=await(await api('/api/page-by-ids',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:summary.id,indices:ids})})).json();events.push(...await materialize(obj.rows));}}
  else{for(let p=1;events.length<max;p++){const obj=await(await api(`/api/page?id=${summary.id}&filterId=${filterId}&page=${p}`)).json();pages=obj.pages;actualTotal=obj.total;events.push(...await materialize(obj.rows));if(p>=pages)break;}}
- events=events.map(e=>({...e,raw:e.raw.slice(0,8192)}));const truncated=(actualTotal??matchedTotal)>events.length;const note=truncated?`내보내기 상한 5000건에 도달했습니다. 실제 검색/필터 결과는 더 많을 수 있습니다.`:'선택한 검색/필터 결과';let payload,mime;
- if(kind==='json'){payload=JSON.stringify({note,metadataOnly:true,sourceSHA256:summary.sourceHash,events},null,2);mime='application/json;charset=utf-8';}
- else{const cols=['구분','SQL 여부','SQL 유형','발생시각','SQL 코드','SQLSTATE','시작라인','끝라인','메시지','원본(이벤트당 최대8KiB)'];const esc=x=>'"'+csvSafe(String(x??'')).replace(/"/g,'""')+'"';payload='\ufeff'+[cols.map(esc).join(','),...events.map(e=>[e.level,e.category,e.sqlType,e.time,e.sqlCode,e.sqlState,e.line,e.endLine,e.message,e.raw].map(esc).join(','))].join('\r\n');mime='text/csv;charset=utf-8';}
+ events=events.map(e=>({...e,raw:includeRaw?e.raw.slice(0,8192):'',message:includeRaw?e.message:maskExportMessage(e.message),contextId:includeRaw?e.contextId:''}));const truncated=(actualTotal??matchedTotal)>events.length;const note=truncated?`내보내기 상한 5000건에 도달했습니다. 실제 검색/필터 결과는 더 많을 수 있습니다.`:'선택한 검색/필터 결과';let payload,mime;
+ if(kind==='json'){payload=JSON.stringify({note,metadataOnly:!includeRaw,sourceSHA256:summary.sourceHash,events},null,2);mime='application/json;charset=utf-8';}
+ else{const cols=['구분','SQL 여부','SQL 유형','발생시각','SQL 코드','SQLSTATE','시작라인','끝라인','메시지','원본(명시적으로 허용한 경우에만 최대8KiB)'];const esc=x=>'"'+csvSafe(String(x??'')).replace(/"/g,'""')+'"';payload='\ufeff'+[cols.map(esc).join(','),...events.map(e=>[e.level,e.category,e.sqlType,e.time,e.sqlCode,e.sqlState,e.line,e.endLine,e.message,e.raw].map(esc).join(','))].join('\r\n');mime='text/csv;charset=utf-8';}
  const url=URL.createObjectURL(new Blob([payload],{type:mime}));const a=document.createElement('a');a.href=url;a.download=safeFilename(summary.name.replace(/\.[^.]*$/,'')+'_분석')+'.'+kind;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);if(truncated)announce('내보내기는 최대 5,000건으로 제한됩니다. 원본 로그는 저장하거나 변형하지 않았습니다.');
  }catch(e){announce('내보내기 실패: '+e.message,true);}}
 async function rebind(file,m){if(!file)return;

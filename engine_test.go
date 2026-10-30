@@ -478,3 +478,29 @@ func TestIssueIndexNotWrittenOnCancellation(t *testing.T) {
 		}
 	}
 }
+
+func TestReviewEvidenceInExplicitInfoWarnDoesNotChangeSeverity(t *testing.T) {
+ dir := t.TempDir()
+ src := strings.Join([]string{
+  "[2026-10-22 08:00:00.000][INFO][W-1][102][TRACE1][Request][SQLService] - starting",
+  "[2026-10-22 08:00:01.000][INFO][W-1][102][TRACE1][Request][SQLService] - failed",
+  "Caused by: java.sql.SQLException: ORA-12899 value too large",
+  "[2026-10-22 08:00:02.000][WARN][W-2][103][TRACE2][Request][Service] - java.lang.IllegalArgumentException: invalid",
+  "[2026-10-22 08:00:03.000][INFO][W-2][103][TRACE2][Request][Service] - ExceptionHandler initialized",
+  "[2026-10-22 08:00:04.000][ERROR][W-2][103][TRACE2][Request][Service] - java.lang.NullPointerException",
+  "",
+ }, "\n")
+ summary,err:=buildIndexStream(strings.NewReader(src),dir,"utf-8",func(int64){})
+ if err!=nil{t.Fatal(err)}
+ if summary.Counts.All!=5 || summary.Counts.Info!=3 || summary.Counts.Warning!=1 || summary.Counts.Error!=1 || summary.Counts.Review!=2 {
+  t.Fatalf("unexpected explicit levels/review counts: %+v",summary.Counts)
+ }
+ file,err:=os.Open(filepath.Join(dir,"index.bin"));if err!=nil{t.Fatal(err)};defer file.Close()
+ expected:=[]bool{false,true,true,false,false}
+ for i,mark:=range expected {
+  item,err:=readRecord(file,int64(i));if err!=nil{t.Fatal(err)}
+  if got:=matchesGroup(item,"review");got!=mark {t.Errorf("row %d review=%t expected %t",i,got,mark)}
+  if got:=item.JSON(int64(i))["review"].(bool);got!=mark{t.Errorf("row %d json review mismatch",i)}
+ }
+ stat,_:=file.Stat();if stat.Size()!=5*24{t.Fatal("binary record size changed")}
+}
