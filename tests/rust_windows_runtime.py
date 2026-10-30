@@ -95,7 +95,7 @@ def main():
                 body={"host":"127.0.0.1","port":22,"user":"readonly","password":"x",
                       "fingerprint":"","path":"/tmp/server.log","maxBytes":524288})
             assert status==400,(status,body[:400])
-            status,_,body=req(base,"/api/update/check",method="POST",body={"token":"bad\\nwrong"})
+            status,_,body=req(base,"/api/update/check",method="POST",body={"token":"bad\nwrong"})
             assert status==400,(status,body[:300])
             assert b"bad" not in body
             # Prevent cross-site POST, verify no write on disallowed origin.
