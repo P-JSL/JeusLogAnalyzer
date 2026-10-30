@@ -69,3 +69,9 @@ test('SQL evidence deduplicates observed DB codes without discarding first sourc
  assert.deepEqual(d.sqlCodes.map(x=>x.line),[10,12]);
  assert.deepEqual(d.sqlCodes.map(x=>x.code),['ORA-00904','PLS-00201']);
 });
+
+test('MES SQLService ORACLE Begin emits SQL evidence with exact original log line',()=>{
+ const raw='[2026-10-22 09:00:00.000][INFO][worker-1][102][TRACE001][RequestMessage][SQLService] - [ORACLE] Begin SELECT COUNT(*) FROM DUAL';
+ const d=diagnose(raw,470);
+ assert.ok(d.evidence.some(x=>x.kind==='sql'&&x.value==='SELECT COUNT(*) FROM DUAL'&&x.line===470));
+});
