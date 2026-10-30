@@ -2,6 +2,7 @@
 mod api;
 mod engine;
 mod remote;
+mod updater;
 use std::{process::Command,time::Duration};
 use tokio::net::TcpListener;
 #[tokio::main]

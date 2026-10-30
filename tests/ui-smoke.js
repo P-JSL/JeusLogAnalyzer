@@ -8,6 +8,7 @@ const assert=require('node:assert/strict');
 const root=path.join(__dirname,'..'),html=fs.readFileSync(path.join(root,'web/index.html'),'utf8'),css=fs.readFileSync(path.join(root,'web/style.css'),'utf8'),parser=fs.readFileSync(path.join(root,'web/parser.js'),'utf8'),app=fs.readFileSync(path.join(root,'web/app.js'),'utf8');
 const diagnostics=fs.readFileSync(path.join(root,'web/diagnostics.js'),'utf8');
 const remoteUI=fs.readFileSync(path.join(root,'web/remote-sftp.js'),'utf8');
+const updaterUI=fs.readFileSync(path.join(root,'web/updater.js'),'utf8');
 const delay=t=>new Promise(r=>setTimeout(r,t));
 const captureDocs=process.env.JEUS_LENS_DOC_SCREENSHOTS==='1';
 async function saveDocsScreenshot(filename,positionSelector){
@@ -38,6 +39,12 @@ window.fetch=async function(input,opts={}){
   if(route==='/api/page-by-ids'){const req=JSON.parse(opts.body);return message({rows:req.indices.map(i=>window.mockRows[i])})}
   if(route==='/api/delete'){window.mockImported=false;return message({deleted:true})}
   if(route==='/api/status')return message({stage:'complete',indexed:window.mockSummary.size,size:window.mockSummary.size});
+  if(route==='/api/update/check'){window.updateRequests=(window.updateRequests||0)+1;return message({currentVersion:'1.0.2',latestVersion:'1.0.3',updateAvailable:true,asset:'JEUS_Lens_Rust_Windows_x64.exe',size:4800000,runtime:'rust',installSupported:true})}
+  if(route==='/api/update/apply'){window.updateInstallCount=(window.updateInstallCount||0)+1;return message({status:'installing',version:'1.0.3'})}
+  if(route==='/api/remote-trace'){window.remoteRequest=JSON.parse(opts.body);if(window.mockRemoteHang)return new Promise((resolve,reject)=>opts.signal.addEventListener('abort',()=>reject(new DOMException('Cancelled','AbortError')),{once:true}));const stages=window.mockRemoteFails?
+    [{stage:'tcp',level:'info',code:'CONNECTING',message:'연결 시도'},{stage:'ssh',level:'error',code:'AUTH_FAILED',message:'사용자 인증 실패'}]:
+    [{stage:'tcp',level:'info',code:'CONNECTING',message:'연결 시도'},{stage:'auth',level:'success',code:'AUTHENTICATED',message:'계정 인증 완료'},{stage:'done',level:'success',code:'DONE',message:'종료',size:15,offset:0,data:btoa('REMOTE LOG SAFE'),partial:false}];
+    return new Response(stages.map(x=>JSON.stringify(x)).join(String.fromCharCode(10))+String.fromCharCode(10),{status:200,headers:{'Content-Type':'application/x-ndjson'}})}
   if(route==='/api/remote-tail'){window.remoteRequest=JSON.parse(opts.body);return message({size:15,offset:0,data:btoa('REMOTE LOG SAFE'),partial:false})}
   throw Error('unknown mock route: '+route);
 };
@@ -48,7 +55,7 @@ const pages=await until(async()=>{const r=await fetch(`http://127.0.0.1:${port}/
 ws=new WebSocket(pages[0].webSocketDebuggerUrl);await new Promise(r=>ws.addEventListener('open',r,{once:true}));ws.addEventListener('message',e=>{const m=JSON.parse(e.data);if(pending.has(m.id)){const q=pending.get(m.id);pending.delete(m.id);m.error?q.reject(Error(JSON.stringify(m.error))):q.resolve(m.result);}});await call('Runtime.enable');await call('Page.enable');
 await js(`document.open();document.write(${JSON.stringify(html)});document.close();`);
 await js(`(()=>{let s=document.createElement('style');s.textContent=${JSON.stringify(css)};document.head.append(s);})()`);
-await js(parser);await js(diagnostics);await js(mock);await js(app);await js(remoteUI);
+await js(parser);await js(diagnostics);await js(mock);await js(app);await js(remoteUI);await js(updaterUI);
 if(captureDocs)await call('Emulation.setDeviceMetricsOverride',{width:1480,height:1024,deviceScaleFactor:1,mobile:false});
 await saveDocsScreenshot('01-file-import.png','.heading');
 const lines=['[2026.10.23 09:00:00][0] [m-1] [APP-3333] SQL error ORA-00904 invalid column','[2026.10.23 09:00:01][2] [m-1] [APP-3334] request complete'];
@@ -99,8 +106,27 @@ await js(`(()=>{document.querySelector('#remoteHost').value='127.0.0.1';document
 await until(()=>js(`document.querySelector('#remoteOutput').textContent.includes('REMOTE LOG SAFE')`));
 assert.equal(await js(`window.remoteRequest.maxBytes`),524288);
 assert.equal(await js(`window.remoteRequest.path`),'/logs/server.log');
+assert.match(await js(`document.querySelector('#remoteTraceOutput').textContent`),/계정 인증 완료/);
+await js(`document.querySelector('#remoteTabTrace').click()`);
+assert.equal(await js(`document.querySelector('#remoteTabTrace').getAttribute('aria-selected')`),'true');
+await js(`(()=>{window.mockRemoteFails=true;document.querySelector('#remoteConnect').click()})()`);
+await until(()=>js(`document.querySelector('#remoteStatus').textContent.includes('AUTH_FAILED')`));
+assert.match(await js(`document.querySelector('#remoteTraceOutput').textContent`),/사용자 인증 실패/);
+await js(`window.mockRemoteFails=false`);
+await js(`(()=>{window.mockRemoteHang=true;document.querySelector('#remoteConnect').click()})()`);
+await until(()=>js(`document.querySelector('#remoteDisconnect').disabled===false`));
+await js(`document.querySelector('#remoteDisconnect').click();window.mockRemoteHang=false`);
+assert.match(await js(`document.querySelector('#remoteStatus').textContent`),/중단/);
+assert.equal(await js(`document.querySelector('#remoteConnect').disabled`),false);
+
+
 if(captureDocs)await js(`(()=>{document.querySelector('#remoteHost').value='';document.querySelector('#remoteUser').value='';document.querySelector('#remotePass').value='';document.querySelector('#remoteFingerprint').value='';document.querySelector('#remotePath').value='';document.querySelector('#remoteOutput').textContent='';document.querySelector('#remoteStatus').textContent='서버 호스트키를 확인하고 읽기 전용 계정으로 접속합니다.';})()`);
 await saveDocsScreenshot('04-remote-sftp.png','.remote-panel');
+await until(()=>js(`document.querySelector('#updateApply').disabled===false`));
+assert.match(await js(`document.querySelector('#updateStatus').textContent`),/1\.0\.3/);
+await js(`document.querySelector('#updateApply').click()`);
+await until(()=>js(`window.updateInstallCount===1`));
+assert.match(await js(`document.querySelector('#updateStatus').textContent`),/자동 재실행/);
 await call('Emulation.setDeviceMetricsOverride',{width:1480,height:1050,deviceScaleFactor:1,mobile:false});
 const snap=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});fs.writeFileSync(path.join(root,'preview.png'),Buffer.from(snap.data,'base64'));
 const rebindState=await js(`(async()=>{ await rebind(new File(['different'],'wrong.log'),window.mockSummary); return {staleFile:currentFile!==null,staleSummary:summary!==null,visible:!document.querySelector('#results').classList.contains('hidden'),warning:document.querySelector('#notice').textContent.includes('크기가')};})()`);
