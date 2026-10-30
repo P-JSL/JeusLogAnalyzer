@@ -55,7 +55,7 @@ def main():
                     time.sleep(.15)
             else:
                 raise TimeoutError("Windows Rust loopback did not open")
-            assert "X-Frame-Options" in headers,headers
+            assert headers.get("x-frame-options","").upper()=="DENY",headers
             assert json.loads(raw)["items"]==[]
             status,_,html=req(base,"/")
             assert status==200 and b"JEUS" in html
