@@ -36,6 +36,13 @@ jobs:
         run: |
           go build -trimpath -o jeus-lens .
           node tests/api-smoke.js
+      - name: Chromium UI smoke (when system Chromium exists)
+        run: |
+          if [ -x /usr/bin/chromium ]; then
+            node tests/ui-smoke.js
+          else
+            echo 'Chromium unavailable; UI smoke not executed on this runner'
+          fi
       - name: Compile Windows x64 application
         run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags='-s -w -H=windowsgui' -o JEUS_Lens_Windows_x64.exe .
       - uses: actions/upload-artifact@v4
