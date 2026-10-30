@@ -3,7 +3,7 @@ const test=require('node:test');const assert=require('node:assert/strict');const
 const script=fs.readFileSync(path.join(__dirname,'../web/search-worker.js'),'utf8');
 async function runSearch(events,query,group){
  let offset=0;const descriptors=new Uint8Array(events.length*24);const view=new DataView(descriptors.buffer);
- const bytes=[];for(let i=0;i<events.length;i++){const e=events[i],chunk=new TextEncoder().encode(e.text);bytes.push(chunk);view.setBigUint64(i*24,BigInt(offset),true);view.setUint32(i*24+8,chunk.length,true);view.setUint8(i*24+20,e.level);view.setUint8(i*24+21,e.category);view.setUint8(i*24+22,e.subtype||0);offset+=chunk.length;}
+ const bytes=[];for(let i=0;i<events.length;i++){const e=events[i],chunk=new TextEncoder().encode(e.text);bytes.push(chunk);view.setBigUint64(i*24,BigInt(offset),true);view.setUint32(i*24+8,chunk.length,true);view.setUint8(i*24+20,e.level);view.setUint8(i*24+21,e.category);view.setUint8(i*24+22,e.subtype||0);view.setUint8(i*24+23,e.review||0);offset+=chunk.length;}
  const file=new File(bytes,'log.txt');
  const messages=[];const sandbox={TextDecoder,URL,Uint8Array,DataView,Date,File,postMessage:v=>messages.push(v),fetch:async()=>new Response(descriptors,{status:200})};
  vm.runInNewContext(script,sandbox);
