@@ -53,6 +53,7 @@ test('extracts MyBatis ### SQL, ### Cause, and multiple vendor/SQLSTATE markers 
  assert.deepEqual(d.sqlStates.map(x=>[x.code,x.line]),[['42000',73]]);
  assert.deepEqual(d.exceptions.map(x=>x.type),['java.sql.SQLSyntaxErrorException','java.sql.SQLException']);
  assert.equal(d.rootCause.line,74);
+ assert.ok(!d.evidence.some(x=>x.name==='Cause'||x.name==='SQLState'), 'diagnostic metadata is not business input');
  assert.equal(d.location.source,'Dao.java');
  assert.equal(d.location.logLine,75);
 });
