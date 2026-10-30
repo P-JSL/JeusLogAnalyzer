@@ -55,7 +55,8 @@
   const binary=atob(data.data||'');
   const bytes=Uint8Array.from(binary,char=>char.charCodeAt(0));
   const decoded=new TextDecoder(el('remoteEncoding').value,{fatal:false}).decode(bytes);
-  output.textContent=(data.partial?'[파일 끝부분 512KiB만 표시합니다. 앞부분은 포함되지 않습니다.]\n':'')+decoded;
+  if(window.RemoteLogProfiles?.onData){window.RemoteLogProfiles.onData(decoded,data)}
+  else{output.textContent=(data.partial?'[파일 끝부분 512KiB만 표시합니다. 앞부분은 포함되지 않습니다.]\\n':'')+decoded;}
   status.textContent='조회 완료 · 원격 크기 '+Number(data.size).toLocaleString('ko-KR')+' bytes · '+new Date().toLocaleTimeString('ko-KR');
  }
  async function runTrace(manual=true){

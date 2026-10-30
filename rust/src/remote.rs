@@ -15,9 +15,14 @@ fn check(q:&RemoteReq)->Result<(),String>{
  if q.port==0||q.user.is_empty()||q.user.len()>128||q.user.bytes().any(|b|b==0||b==10||b==13)||q.password.is_empty()||q.password.len()>1024{return Err("SSH 사용자 또는 비밀번호가 올바르지 않습니다".into())}
  if !q.fingerprint.starts_with("SHA256:")||q.fingerprint.len()<42||q.fingerprint.len()>57||!q.fingerprint[7..].bytes().all(|b|b.is_ascii_alphanumeric()||b==b'+'||b==b'/'){return Err("SHA256 호스트키 지문을 입력해야 합니다".into())}
  if !q.path.starts_with('/')||q.path.len()>2048||q.path.contains(['\\','\n','\r','\0'])||q.path[1..].split('/').any(|s|s==".."||s=="."||s.is_empty()){return Err("올바른 절대 로그 경로를 입력하세요".into())}
- let lower=q.path.to_ascii_lowercase();
- let ext=[".log",".out",".txt",".trace"].iter().any(|s|lower.ends_with(s))||[".log.",".out.",".txt.",".trace."].iter().any(|s|lower.rsplit_once(s).is_some_and(|(_,suffix)|suffix.len()<=6&&!suffix.is_empty()&&suffix.bytes().all(|b|b.is_ascii_digit())));
- if !ext||q.max_bytes==0||q.max_bytes>512*1024{return Err("로그 확장자 또는 최대 조회 크기가 잘못됐습니다".into())}
+ // Keep exactly the same portable text-log filename policy as Go.
+ // Cached regular expression: O(filename length) input validation.
+ static LOG_FILENAME:std::sync::OnceLock<regex::Regex>=std::sync::OnceLock::new();
+ let filename=q.path.rsplit('/').next().unwrap_or("");
+ let lower=filename.to_ascii_lowercase();
+ let compressed=[".gz",".zip",".bz2",".xz",".zst",".7z"].iter().any(|suffix|lower.ends_with(suffix));
+ let allowed=!compressed&&LOG_FILENAME.get_or_init(||regex::Regex::new(r"(?i)^(?:[^/]+\.(?:log|out|txt|trace|err|error|audit|jsonl|ndjson)(?:[._-][0-9][0-9A-Za-z._-]{0,31})?|(?:access_log|error_log|syslog|messages|secure|maillog)(?:[._-][0-9][0-9A-Za-z._-]{0,31})?)$").expect("valid fixed log filename policy")).is_match(filename);
+ if !allowed||q.max_bytes==0||q.max_bytes>512*1024{return Err("지원하지 않는 텍스트 로그 파일명 또는 조회 크기입니다. 압축 파일은 지원하지 않습니다".into())}
  Ok(())
 }
 struct VerifyHost{pin:String}
@@ -163,5 +168,27 @@ pub async fn remote_trace(Json(q):Json<RemoteReq>)->Response{
 
 #[cfg(test)]mod tests{
  use super::*;
+ #[test]fn portable_log_filenames_match_go(){
+  let base=RemoteReq{host:"127.0.0.1".into(),port:22,user:"readonly".into(),password:"test".into(),fingerprint:format!("SHA256:{}", "A".repeat(43)),path:"/logs/server.log".into(),max_bytes:512*1024};
+  for filename in [
+   "/opt/jeus/logs/JeusServer.log","/opt/webtob/log/access_20261030.log",
+   "/opt/webtob/log/error_20261030.log","/opt/webtob/log/system_20261030.log",
+   "/opt/webtob/webtob_system.log","/var/log/nginx/access.log.1",
+   "/var/log/httpd/access_log","/var/log/httpd/error_log.2","/var/log/syslog",
+   "/var/log/messages.1","/opt/tomcat/logs/catalina.out",
+   "/opt/apps/gc.log.0.current","/opt/apps/access.log-2026-10-30",
+   "/opt/apps/server.jsonl"
+  ]{
+   let mut q=base.clone();q.path=filename.into();assert!(check(&q).is_ok(),"rejects {filename}");
+  }
+  for filename in [
+   "/etc/shadow","/etc/passwd","/var/log/archive.tar.gz",
+   "/var/log/server.log.gz","/var/log/server.log.1.gz",
+   "/var/log/server.zip","/var/log/../etc/server.log",
+   "/var/log//server.log","relative/access_log"
+  ]{
+   let mut q=base.clone();q.path=filename.into();assert!(check(&q).is_err(),"allows {filename}");
+  }
+ }
  #[test]fn deny_unsafe_remote(){let mut q=RemoteReq{host:"127.0.0.1".into(),port:22,user:"readonly".into(),password:"test".into(),fingerprint:format!("SHA256:{}", "A".repeat(43)),path:"/logs/server.log".into(),max_bytes:512*1024};assert!(check(&q).is_ok());q.path="/etc/../shadow.log".into();assert!(check(&q).is_err());q.path="/logs/server.log".into();q.fingerprint.clear();assert!(check(&q).is_err());q.fingerprint=format!("SHA256:{}", "A".repeat(43));q.max_bytes=1<<30;assert!(check(&q).is_err());}
 }

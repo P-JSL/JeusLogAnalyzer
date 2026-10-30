@@ -35,6 +35,10 @@ type remoteTailRequest struct {
 var remoteHostname = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$`)
 var remoteFingerprint = regexp.MustCompile(`^SHA256:[A-Za-z0-9+/]{35,50}$`)
 
+// Allow common middleware text logs, dated rotations, and extensionless syslogs.
+// Do not expose arbitrary configuration or compressed/binary files.
+var remoteLogFilename = regexp.MustCompile(`(?i)^(?:[^/]+\.(?:log|out|txt|trace|err|error|audit|jsonl|ndjson)(?:[._-][0-9][0-9A-Za-z._-]{0,31})?|(?:access_log|error_log|syslog|messages|secure|maillog)(?:[._-][0-9][0-9A-Za-z._-]{0,31})?)$`)
+
 func validateRemoteTail(v remoteTailRequest) error {
  if !remoteHostname.MatchString(v.Host) && net.ParseIP(v.Host)==nil {return errors.New("잘못된 서버 주소입니다")}
  if v.Port<1 || v.Port>65535 {return errors.New("SSH 포트가 올바르지 않습니다")}
@@ -44,18 +48,13 @@ func validateRemoteTail(v remoteTailRequest) error {
  if len(v.Path)==0 || len(v.Path)>2048 || !strings.HasPrefix(v.Path,"/") || strings.ContainsAny(v.Path,"\\\x00\r\n") {return errors.New("절대 로그 경로를 입력해 주세요")}
  for _,segment:=range strings.Split(v.Path,"/"){if segment==".." || segment=="." {return errors.New("경로 이동은 허용하지 않습니다")}}
  if path.Clean(v.Path)!=v.Path {return errors.New("정규화된 절대 경로를 입력해 주세요")}
- base:=path.Base(v.Path)
- lower:=strings.ToLower(base)
- allowed:=strings.HasSuffix(lower,".log")||strings.HasSuffix(lower,".out")||strings.HasSuffix(lower,".txt")||strings.HasSuffix(lower,".trace")
- // JEUS rolling logs (server.log.1 etc) are also read-only.
- if !allowed {
-  for _,ext:=range []string{".log.",".out.",".txt.",".trace."} {
-   if i:=strings.LastIndex(lower,ext);i>=0 {
-    n:=lower[i+len(ext):];_,err:=strconv.Atoi(n);if err==nil&&len(n)<=6{allowed=true;break}
-   }
-  }
+ name:=strings.ToLower(path.Base(v.Path))
+ for _,compressed:=range []string{".gz",".zip",".bz2",".xz",".zst",".7z"} {
+  if strings.HasSuffix(name,compressed){return errors.New("압축 로그는 텍스트 미리보기에서 지원하지 않습니다")}
  }
- if !allowed {return errors.New("로그 파일 확장자만 조회할 수 있습니다")}
+ if !remoteLogFilename.MatchString(name) {
+  return errors.New("지원하는 텍스트 로그(.log/.out/.txt/.trace/.err, access_log, syslog 등)만 읽을 수 있습니다. 압축 파일은 지원하지 않습니다")
+ }
  if v.MaxBytes<1||v.MaxBytes>512*1024 {return errors.New("한 번에 최대 512KiB만 조회할 수 있습니다")}
  return nil
 }

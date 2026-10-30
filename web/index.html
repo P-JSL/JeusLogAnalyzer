@@ -9,6 +9,7 @@
   <script src="parser.js" defer></script>
   <script src="diagnostics.js" defer></script>
   <script src="app.js" defer></script>
+  <script src="remote-profiles.js" defer></script>
   <script src="remote-sftp.js" defer></script>
   <script src="updater.js" defer></script>
 </head>
@@ -27,7 +28,30 @@
         <section class="heading"><div><span class="eyebrow">SERVER LOG INTELLIGENCE</span><h1>JEUS 로그 분석 <span class="subtle-head">/ Overview</span></h1><p class="lead">예외와 장애 징후는 빠르게 찾고, 정상 메시지는 깔끔하게 분리합니다.</p></div><button id="resetButton" class="btn secondary hidden" type="button">↺ &nbsp;새 분석</button></section>
         <section class="upload-panel" id="dropZone" tabindex="0" role="button" aria-label="로그 파일 선택 또는 끌어놓기"><div class="upload-left"><div class="upload-icon">↥</div><div><h2 id="uploadHeading">로그 파일을 여기에 끌어다 놓으세요</h2><p id="uploadDesc">파일을 드래그하거나 버튼을 눌러서 바로 분석합니다. <span>TXT · LOG · OUT</span></p></div></div><div class="upload-actions"><label class="encoding-label" for="encoding">인코딩</label><select id="encoding" aria-label="파일 인코딩"><option value="auto">자동 감지</option><option value="utf-8">UTF-8</option><option value="euc-kr">EUC-KR / CP949</option></select><button id="pickButton" class="btn primary" type="button">＋ 파일 선택</button><input type="file" id="fileInput" accept=".txt,.log,.out,.trace,text/plain" hidden></div></section>
         <section class="remote-panel" aria-label="SSH SFTP 읽기 전용 로그 조회">
- <div class="panel-heading"><div><span class="mini-kicker">REMOTE LOG (READ ONLY)</span><h2>SSH/SFTP 원격 로그 조회</h2></div><small>호스트키 검증 필수 · 서버 명령 및 파일 수정 기능 없음</small></div>
+ <div class="panel-heading"><div><span class="mini-kicker">MULTI-SERVER LOGS · READ ONLY</span><h2>서버별 SSH/SFTP 원격 로그 조회</h2></div><small>JEUS · WebtoB · WAS · 웹 서버 · Linux · 사용자 정의</small></div>
+ <div class="remote-service-bar">
+  <label>서버/미들웨어 유형
+   <select id="remoteService" aria-label="원격 로그 서버 유형">
+    <option value="jeus">JEUS</option><option value="webtob">WebtoB (JEUS 연동)</option>
+    <option value="tomcat">Tomcat / JBoss / WildFly</option><option value="spring">Spring Boot / Java 애플리케이션</option>
+    <option value="nginx">Nginx</option><option value="apache">Apache HTTP Server</option>
+    <option value="linux">Linux OS / syslog</option><option value="other">기타 SSH/SFTP 서버</option>
+   </select>
+  </label>
+  <label>로그 종류
+   <select id="remoteLogKind"><option value="auto">자동 분류</option><option value="access">접속/HTTP 요청</option><option value="error">오류</option><option value="system">시스템</option><option value="app">애플리케이션</option></select>
+  </label>
+ </div>
+ <p id="remoteServiceHint" class="detail-hint" role="status">선택한 서버에 SSH/SFTP로 연결합니다. 실제 로그 경로는 서버 설정에서 확인하세요.</p>
+ <div class="remote-target-toolbar">
+  <label>연결 대상 이름<input id="remoteTargetName" autocomplete="off" placeholder="예: 운영 WebtoB 1호기"></label>
+  <label>세션 내 접속 대상
+   <select id="remoteTargetList" aria-label="현재 세션의 원격 서버 선택"><option value="">새 연결</option></select>
+  </label>
+  <button id="remoteTargetSave" class="btn secondary" type="button">접속 대상 추가/수정</button>
+  <button id="remoteTargetRemove" class="btn secondary" type="button">대상 제거</button>
+ </div>
+ <p class="detail-hint">접속 대상 목록은 현재 브라우저 세션 메모리에만 보관하고 종료 시 사라집니다. 비밀번호는 대상 정보에 저장하지 않습니다. 서로 다른 서버에도 각각 SSH/SFTP 조회 권한이 필요합니다.</p>
  <div class="remote-fields">
   <label>서버 주소<input id="remoteHost" autocomplete="off" placeholder="server.example.local"></label>
   <label>포트<input id="remotePort" type="number" min="1" max="65535" value="22"></label>
@@ -49,6 +73,10 @@
   <button id="remoteTabTrace" role="tab" aria-selected="false" aria-controls="remoteTracePanel" type="button">연결 진단 로그 <span id="remoteTraceCount">0</span></button>
  </div>
  <div id="remotePreviewPanel" role="tabpanel" aria-labelledby="remoteTabContent">
+  <div class="remote-log-insights">
+   <span id="remoteLogSummary" role="status">최근 로그를 조회하면 HTTP 상태와 오류·경고 수를 표시합니다.</span>
+   <label>표시 필터 <select id="remoteLineFilter"><option value="all">전체</option><option value="error">ERROR / 5xx</option><option value="warning">WARN / 4xx</option><option value="http">HTTP 요청만</option></select></label>
+  </div>
   <pre id="remoteOutput" class="remote-output" aria-label="원격 로그 미리보기"></pre>
  </div>
  <div id="remoteTracePanel" role="tabpanel" aria-labelledby="remoteTabTrace" class="hidden">
@@ -59,7 +87,7 @@
   <div id="remoteTraceOutput" role="log" aria-live="polite" aria-relevant="additions" class="remote-trace-output">연결을 시작하면 단계별 진단 기록이 실시간으로 표시됩니다.</div>
   <p class="detail-hint">진단 기록은 현재 브라우저 메모리에만 보관합니다. 비밀번호·인증 토큰·로그 원문은 기록하지 않습니다. SSH 연결은 매 조회마다 생성하고 조회 종료 시 닫습니다.</p>
  </div>
- <p class="detail-hint">SFTP 프로토콜로 일반 로그 파일의 끝부분만 읽습니다. 원격 쉘 실행, 업로드, 삭제, 권한 변경 기능은 제공하지 않습니다. 서버 계정 권한 자체는 애플리케이션이 제한할 수 없으므로 서버에서도 조회 전용 계정을 사용해야 합니다. 이 화면의 조회는 전체 파일 인덱싱이나 장애 확정 진단이 아닙니다.</p>
+ <p class="detail-hint">선택한 서버의 SSH/SFTP 서비스(일반적으로 22번 포트)에 접속하며 WebtoB/JEUS의 HTTP 또는 관리 포트에 직접 접속하지 않습니다. SFTP 프로토콜로 일반 텍스트 로그 파일의 끝부분만 읽습니다. WebtoB 접속·에러·시스템 로그처럼 서로 다른 파일은 경로를 지정하여 조회합니다. 원격 쉘 실행, 업로드, 삭제, 권한 변경 기능은 제공하지 않습니다. 서버 계정 권한 자체는 애플리케이션이 제한할 수 없으므로 서버에서도 조회 전용 계정을 사용해야 합니다. 이 화면의 조회는 전체 파일 인덱싱이나 장애 확정 진단이 아닙니다.</p>
 </section>
         <section class="remote-panel updater-panel" aria-label="업데이트 확인 및 자동 설치">
           <div class="panel-heading"><div><span class="mini-kicker">SECURE AUTO UPDATE</span><h2>자동 업데이트 · GitHub Releases</h2></div>
