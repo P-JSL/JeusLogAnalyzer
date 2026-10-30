@@ -186,8 +186,25 @@ async fn page(State(app):State<App>,Query(q):Query<HashMap<String,String>>)->Res
  let (total,mut ids)=match resolved_filter(&app,&id,fid,meta.counts.all){Ok(v)=>v,Err(e)=>return e};
  let pages=(total.saturating_add(99)/100).max(1);let page=q.get("page").and_then(|s|s.parse::<u64>().ok()).unwrap_or(1).clamp(1,pages);
  let mut idx=match records_file(&app,&id){Ok(f)=>f,Err(e)=>return e};
- let mut rows=Vec::new();
- for i in (page-1)*100..((page*100).min(total)){match filter_row(&mut idx,&mut ids,i){Ok(v)=>rows.push(v),Err(e)=>return e}}
+ let start=(page-1)*100;
+ let count=((page*100).min(total)-start) as usize;
+ let mut rows=Vec::with_capacity(count);
+ if ids.is_none(){
+  // Unfiltered pages contain contiguous 24-byte records: one seek/read
+  // instead of up to 100 filesystem syscalls and 100 small reads.
+  let mut block=vec![0u8;count*24];
+  if idx.seek(SeekFrom::Start(start*24)).is_err()||idx.read_exact(&mut block).is_err(){
+   return err(StatusCode::CONFLICT,"damaged index")
+  }
+  for (position,bytes) in block.chunks_exact(24).enumerate(){
+   let row=match Record::from_bytes(bytes){Ok(v)=>v,Err(_)=>return err(StatusCode::CONFLICT,"damaged index")};
+   rows.push(row.json(start+position as u64));
+  }
+ }else{
+  for i in start..start+count as u64{
+   match filter_row(&mut idx,&mut ids,i){Ok(v)=>rows.push(v),Err(e)=>return e}
+  }
+ }
  Json(json!({"page":page,"pages":pages,"total":total,"rows":rows})).into_response()
 }
 async fn index(State(app):State<App>,Query(q):Query<HashMap<String,String>>)->Response{
