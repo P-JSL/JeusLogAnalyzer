@@ -1,0 +1,53 @@
+name: Verify Rust feature parity and native Windows build
+on:
+  pull_request:
+    paths:
+      - 'rust/**'
+      - 'tests/rust_parity.py'
+      - '.github/workflows/rust.yml'
+      - 'web/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-linux-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native Rust compile and unit tests
+        working-directory: rust
+        run: |
+          cargo fmt --check
+          cargo test --all-targets --locked -- --nocapture
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo build --release --locked
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Go vs Rust API, binary index and diagnostic parity
+        run: |
+          go build -o /tmp/jeus-go .
+          python3 tests/rust_parity.py /tmp/jeus-go rust/target/release/jeus-lens-rust
+
+  native-windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test and build independent native Rust Windows x64 application
+        working-directory: rust
+        run: |
+          cargo test --all-targets --locked
+          cargo build --release --locked
+          Get-Item target/release/jeus-lens-rust.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JEUS-Lens-Rust-Windows-x64-PREVIEW
+          path: rust/target/release/jeus-lens-rust.exe
+          retention-days: 7
+          if-no-files-found: error
