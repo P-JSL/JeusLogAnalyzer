@@ -4,7 +4,7 @@ import hashlib, json, os, pathlib, subprocess, sys, tempfile, time
 import urllib.request, urllib.error
 
 def http(url, route, method="GET", data=None, as_json=True):
-    req=urllib.request.Request(url+route, data=data, method=method)
+    req=urllib.request.Request(url.rstrip('/')+route, data=data, method=method)
     if method=="POST":req.add_header("Origin",url[:-1])
     if as_json and data is not None:req.add_header("Content-Type","application/json")
     try:
