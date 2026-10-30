@@ -1,12 +1,12 @@
 //! HTTP API wire-compatible with Go's browser client. Source bytes are never persisted.
 use crate::{engine::{self,Indexer,Record,Summary},remote};
-use axum::{body::Body,extract::{State,Query},http::{HeaderMap,HeaderValue,Method,Request,StatusCode,header},middleware::{self,Next},response::{IntoResponse,Response},routing::{get,post},Json,Router};
+use axum::{body::Body,extract::{State,Query},http::{HeaderValue,Method,Request,StatusCode,header},middleware::{self,Next},response::{IntoResponse,Response},routing::{get,post},Json,Router};
 use futures_util::StreamExt;
 use rand::RngCore;
 use serde::Deserialize;
 use serde_json::{json,Value};
 use sha2::{Sha256,Digest};
-use std::{collections::HashMap,fs::{self,File},io::{Read,Seek,SeekFrom,Write},path::{Path,PathBuf},sync::{Arc,Mutex},time::{SystemTime,UNIX_EPOCH}};
+use std::{collections::HashMap,fs::{self,File},io::{Read,Seek,SeekFrom,Write},path::{Path,PathBuf},sync::{Arc,Mutex},};
 use tokio::net::TcpListener;
 use rust_embed::RustEmbed;
 use chrono::Utc;
