@@ -1,0 +1,116 @@
+name: Add verified Rust Windows binary to v1.0.0 release
+
+on:
+  workflow_run:
+    workflows: ["Verify Rust feature parity and native Windows build"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: rust-v1.0.0-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - name: Checkout exactly the Rust-verified commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Confirm original release and Go regression status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFIED_COMMIT: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          test -f rust/Cargo.lock
+          gh release view v1.0.0 --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' | grep -Fx false
+          for name in JEUS_Lens_Windows_x64.exe JEUS_Lens_Windows_x64_v1.0.0.zip SHA256SUMS.txt; do
+            gh release view v1.0.0 --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -Fx "$name"
+          done
+          passed=0
+          for attempt in $(seq 1 50); do
+            status="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow build.yml --branch main --limit 60 --json headSha,conclusion --jq ".[] | select(.headSha == \"$VERIFIED_COMMIT\") | .conclusion" | head -n1)"
+            if [ "$status" = success ]; then passed=1; break; fi
+            if [ "$status" = failure ] || [ "$status" = cancelled ]; then
+              echo "::error::Go verification failed for Rust commit $VERIFIED_COMMIT"
+              exit 1
+            fi
+            sleep 15
+          done
+          test "$passed" -eq 1 || { echo "::error::Go CI did not pass for $VERIFIED_COMMIT"; exit 1; }
+
+      - name: Download the exact successful Windows Rust artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFIED_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          mkdir -p dist
+          gh run download "$VERIFIED_RUN_ID" --repo "$GITHUB_REPOSITORY" --name JEUS-Lens-Rust-Windows-x64-PREVIEW --dir dist
+          test -s dist/jeus-lens-rust.exe
+          file dist/jeus-lens-rust.exe | grep -Ei 'PE32|executable'
+
+      - name: Build Rust release ZIP and checksums
+        env:
+          VERIFIED_COMMIT: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          cp dist/jeus-lens-rust.exe dist/JEUS_Lens_Rust_Windows_x64.exe
+          printf '%s\n' "$VERIFIED_COMMIT" > dist/RUST_SOURCE_COMMIT.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile,ZIP_DEFLATED
+          d=Path("dist")
+          with ZipFile(d/"JEUS_Lens_Rust_Windows_x64_v1.0.0.zip","w",compression=ZIP_DEFLATED,compresslevel=9) as out:
+              out.write(d/"JEUS_Lens_Rust_Windows_x64.exe","JEUS_Lens_Rust_Windows_x64.exe")
+              out.write("rust/README.md","README_Rust.md")
+              out.write(d/"RUST_SOURCE_COMMIT.txt","RUST_SOURCE_COMMIT.txt")
+          PY
+          cd dist
+          sha256sum JEUS_Lens_Rust_Windows_x64.exe JEUS_Lens_Rust_Windows_x64_v1.0.0.zip > SHA256SUMS_Rust.txt
+
+      - name: Append Rust assets without overwriting Go files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for name in JEUS_Lens_Rust_Windows_x64.exe JEUS_Lens_Rust_Windows_x64_v1.0.0.zip SHA256SUMS_Rust.txt; do
+            if gh release view v1.0.0 --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -Fxq "$name"; then
+              echo "Already published: $name (will not overwrite)"
+            else
+              gh release upload v1.0.0 "dist/$name" --repo "$GITHUB_REPOSITORY"
+            fi
+          done
+
+      - name: Verify downloaded Rust asset checksums and preserve notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFIED_COMMIT: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          mkdir -p verify
+          gh release download v1.0.0 --repo "$GITHUB_REPOSITORY" --pattern '*Rust*' --dir verify
+          (cd verify && sha256sum -c SHA256SUMS_Rust.txt)
+          gh release view v1.0.0 --repo "$GITHUB_REPOSITORY" --json body --jq .body > release-notes.md
+          if ! grep -Fq '## Rust Windows x64' release-notes.md; then
+            cat >> release-notes.md <<EOF
+
+          ## Rust Windows x64
+
+          네이티브 Rust 백엔드와 기존 브라우저 UI를 내장한 별도 실행 파일입니다. 기존 Go 실행 파일도 계속 제공됩니다.
+
+          - JEUS_Lens_Rust_Windows_x64.exe: Windows x64 Rust 실행 파일
+          - JEUS_Lens_Rust_Windows_x64_v1.0.0.zip: 실행 파일, 사용법 및 소스 커밋
+          - SHA256SUMS_Rust.txt: Rust 배포 파일 체크섬
+          - Rust 소스 커밋: $VERIFIED_COMMIT
+
+          검증: Go/Rust 로그 분석 결과 비교, Windows EXE HTTP 실행, 로컬 OpenSSH/SFTP 및 단위 테스트. 코드 서명은 포함되지 않습니다.
+          EOF
+            gh release edit v1.0.0 --repo "$GITHUB_REPOSITORY" --notes-file release-notes.md
+          fi
+          gh release view v1.0.0 --repo "$GITHUB_REPOSITORY" --json tagName,assets --jq '{tag:.tagName,assets:[.assets[].name]}'
