@@ -67,7 +67,17 @@ def main():
             status,data=post(base,{**q,"path":symlink})
             assert status!=200,(status,data)
             assert pathlib.Path(log_path).read_bytes()==expected
-            print("RUST_SFTP_READONLY_HOSTKEY_AUTH_SYMLINK_TAIL_GUARDS_PASS",flush=True)
+            # File rotation between polls must pick up the new file on the next read.
+            old=pathlib.Path(log_path)
+            rotated=old.with_name(old.name+".1")
+            old.rename(rotated)
+            replacement=b"[2026-10-30][INFO] rotated log now active\\n"
+            old.write_bytes(replacement)
+            status,data=post(base,q)
+            assert status==200,(status,data)
+            assert base64.b64decode(data["data"])==replacement,(status,data)
+            assert rotated.read_bytes()==expected
+            print("RUST_SFTP_READONLY_HOSTKEY_AUTH_SYMLINK_ROTATION_TAIL_GUARDS_PASS",flush=True)
         finally:
             p.terminate()
             try:p.wait(timeout=5)
