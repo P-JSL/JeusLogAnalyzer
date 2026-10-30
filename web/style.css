@@ -77,3 +77,16 @@ button.issue-item:hover,button.issue-item:focus-visible{background:#263954;borde
 .surge-stat span{font-size:11px;color:#bdcee1}
 .surge-footnote{margin:12px 0 0}
 @media(max-width:650px){.surge-row{align-items:flex-start;flex-direction:column}}
+
+/* Read-only remote tail: deliberately separate from the imported-file archive. */
+.remote-panel{background:#141d2b;border:1px solid #283449;border-radius:10px;padding:20px 23px;margin-bottom:20px}
+.remote-panel .panel-heading{gap:15px;flex-wrap:wrap}
+.remote-fields{display:grid;grid-template-columns:2fr 1fr 2fr 2fr;gap:10px;margin:15px 0}
+.remote-fields label{font-size:11px;color:#94a5bf;display:flex;flex-direction:column;gap:6px}
+.remote-fields label.remote-wide{grid-column:span 2}
+.remote-fields input{width:100%;border:1px solid #344562;border-radius:6px;background:#0f1723;color:#dfebf7;padding:9px 10px;min-width:0}
+.remote-actions{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.remote-actions select{background:#0e1725;color:#d7e2f1;border:1px solid #374761;border-radius:6px}
+.remote-output{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;max-height:310px;overflow:auto;background:#0e1420;border:1px solid #263449;border-radius:8px;margin:12px 0 9px;padding:14px;color:#cdd9ec;line-height:1.65}
+.remote-output:empty{display:none}
+@media(max-width:1090px){.remote-fields{grid-template-columns:1fr 1fr}.remote-fields label.remote-wide{grid-column:span 2}}
