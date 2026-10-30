@@ -9,6 +9,7 @@
   <script src="parser.js" defer></script>
   <script src="diagnostics.js" defer></script>
   <script src="app.js" defer></script>
+  <script src="remote-sftp.js" defer></script>
 </head>
 <body>
   <div id="dropOverlay" class="drop-overlay" aria-hidden="true"><div class="drop-overlay-inner"><span class="drop-icon">↧</span><h2>이곳에 로그 파일을 놓으세요</h2><p>분석이 자동으로 시작됩니다</p></div></div>
@@ -24,7 +25,25 @@
       <div class="content">
         <section class="heading"><div><span class="eyebrow">SERVER LOG INTELLIGENCE</span><h1>JEUS 로그 분석 <span class="subtle-head">/ Overview</span></h1><p class="lead">예외와 장애 징후는 빠르게 찾고, 정상 메시지는 깔끔하게 분리합니다.</p></div><button id="resetButton" class="btn secondary hidden" type="button">↺ &nbsp;새 분석</button></section>
         <section class="upload-panel" id="dropZone" tabindex="0" role="button" aria-label="로그 파일 선택 또는 끌어놓기"><div class="upload-left"><div class="upload-icon">↥</div><div><h2 id="uploadHeading">로그 파일을 여기에 끌어다 놓으세요</h2><p id="uploadDesc">파일을 드래그하거나 버튼을 눌러서 바로 분석합니다. <span>TXT · LOG · OUT</span></p></div></div><div class="upload-actions"><label class="encoding-label" for="encoding">인코딩</label><select id="encoding" aria-label="파일 인코딩"><option value="auto">자동 감지</option><option value="utf-8">UTF-8</option><option value="euc-kr">EUC-KR / CP949</option></select><button id="pickButton" class="btn primary" type="button">＋ 파일 선택</button><input type="file" id="fileInput" accept=".txt,.log,.out,.trace,text/plain" hidden></div></section>
-        <div id="notice" role="status" class="notice hidden"></div>
+        <section class="remote-panel" aria-label="SSH SFTP 읽기 전용 로그 조회">
+ <div class="panel-heading"><div><span class="mini-kicker">REMOTE LOG (READ ONLY)</span><h2>SSH/SFTP 원격 로그 조회</h2></div><small>호스트키 검증 필수 · 서버 명령 및 파일 수정 기능 없음</small></div>
+ <div class="remote-fields">
+  <label>서버 주소<input id="remoteHost" autocomplete="off" placeholder="server.example.local"></label>
+  <label>포트<input id="remotePort" type="number" min="1" max="65535" value="22"></label>
+  <label>SSH 사용자<input id="remoteUser" autocomplete="off"></label>
+  <label>비밀번호<input id="remotePass" type="password" autocomplete="off"></label>
+  <label class="remote-wide">서버 호스트키 SHA256 지문<input id="remoteFingerprint" autocomplete="off" placeholder="SHA256:..."></label>
+  <label class="remote-wide">원격 로그 절대경로<input id="remotePath" autocomplete="off" placeholder="/path/to/JeusServer.log"></label>
+ </div>
+ <div class="remote-actions">
+  <button id="remoteRead" class="btn secondary" type="button">최근 로그 512KiB 조회</button>
+  <label class="search-option"><input id="remoteAuto" type="checkbox"> 10초마다 새로고침</label>
+  <label class="search-option">인코딩<select id="remoteEncoding"><option value="utf-8">UTF-8</option><option value="euc-kr">CP949/EUC-KR</option></select></label>
+  <span id="remoteStatus" class="tiny-muted" role="status">서버 자격 증명은 이 세션에서만 사용하며 파일을 저장하지 않습니다.</span>
+ </div>
+ <pre id="remoteOutput" class="remote-output" aria-label="원격 로그 미리보기"></pre>
+ <p class="detail-hint">SFTP 프로토콜로 일반 로그 파일의 끝부분만 읽습니다. 원격 쉘 실행, 업로드, 삭제, 권한 변경 기능은 제공하지 않습니다. 서버 계정 권한 자체는 애플리케이션이 제한할 수 없으므로 서버에서도 조회 전용 계정을 사용해야 합니다. 이 화면의 조회는 전체 파일 인덱싱이나 장애 확정 진단이 아닙니다.</p>
+</section><div id="notice" role="status" class="notice hidden"></div>
         <section id="progressPanel" class="progress-panel hidden" aria-live="polite"><div class="progress-label"><span id="progressLabel">파일 분석 중...</span><span id="progressPercent">0%</span></div><div class="progress-track"><div id="progressBar"></div></div></section>
         <section id="emptyState" class="empty-state"><div class="empty-visual"><span class="line line-1"></span><span class="line line-2"></span><span class="line line-3"></span><span class="line line-4"></span><i>⌕</i></div><h2>분석할 로그 파일을 선택해 주세요</h2><p>JEUS 8·9 기본 포맷과 일반적인 Java 로그 형식을 인식합니다.<br>오류·경고·일반 로그·SQL 예외를 분리하고 예외 스택을 묶어서 보여줍니다.</p><div class="feature-row"><span>◫ &nbsp;멀티라인 예외 연결</span><span>◇ &nbsp;오류 유형 집계</span><span>⇩ &nbsp;CSV 내보내기</span></div></section>
         <div id="results" class="hidden">
