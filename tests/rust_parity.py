@@ -18,6 +18,7 @@ def run(app,root):
     env=os.environ.copy()
     env["JEUS_LENS_DATA_DIR"]=str(root)
     env["JEUS_ANALYZER_NO_BROWSER"]="1"
+    root.mkdir(parents=True,exist_ok=True)
     app=subprocess.Popen([str(pathlib.Path(app).resolve())],cwd=root,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env=env)
     line=app.stdout.readline().strip()
     assert line.startswith("http://127.0.0.1:") and line.endswith("/"),(line,app.poll())
