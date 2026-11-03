@@ -9,7 +9,7 @@ const fileInput=$('fileInput'),drop=$('dropZone');
 function announce(message,error=false){$('notice').textContent=message;$('notice').classList.remove('hidden');$('notice').classList.toggle('error',error);}
 function hideNotice(){$('notice').classList.add('hidden');}
 function progress(p,text){$('progressPanel').classList.remove('hidden');$('progressLabel').textContent=text;$('progressPercent').textContent=Math.round(p)+'%';$('progressBar').style.width=Math.round(p)+'%';}
-function destroy(){detailRequest++;if(abortImport){abortImport.abort();abortImport=null;}if(searchWorker){searchWorker.terminate();searchWorker=null;}operation++;pageRequest++;}
+function destroy(){window.LocalFileWatch?.stop?.(true);detailRequest++;if(abortImport){abortImport.abort();abortImport=null;}if(searchWorker){searchWorker.terminate();searchWorker=null;}operation++;pageRequest++;}
 async function api(path,options){const res=await fetch(path,{cache:'no-store',...options});if(!res.ok){let message=res.status+' HTTP 오류';try{message=(await res.json()).error||message;}catch{}throw Error(message);}return res;}
 const sessionId=()=>Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
 function activeTab(group){activeFilter=group;const selected=group.startsWith('issue:');$('issueScope').classList.toggle('hidden',!selected);$('searchBox').disabled=selected;if(!selected)$('issueScopeName').textContent='';$('sqlSubtype').classList.toggle('hidden',group!=='sql');if(group!=='sql')$('sqlSubtype').value='sql';document.querySelectorAll('#tabs .tab').forEach(el=>{const active=el.dataset.level===group;el.classList.toggle('active',active);el.setAttribute('aria-selected',String(active));});}
@@ -101,7 +101,29 @@ function highlightText(target,text,query){
  }
  target.append(document.createTextNode(text.slice(at)));
 }
-function renderRows(data,total){const body=$('logRows');body.replaceChildren();$('matchedCount').textContent=fmt(total)+'건';$('pageInfo').textContent=total?`${fmt((currentPage-1)*100+1)}–${fmt(Math.min(total,currentPage*100))} / ${fmt(total)}건`:'0건';$('pageNumber').textContent=`${fmt(currentPage)} / ${fmt(lastPage)}`;$('prevPage').disabled=currentPage<=1;$('nextPage').disabled=currentPage>=lastPage;$('noMatches').classList.toggle('hidden',data.length>0);
+let logSortKey='line',logSortAsc=true;
+function sortedPage(data){
+ const value=(v)=>{
+  if(logSortKey==='code')return [v.code,v.thread].filter(Boolean).join(' / ');
+  if(logSortKey==='level')return {error:0,warning:1,info:2}[v.level]??3;
+  return v[logSortKey]??'';
+ };
+ return [...data].sort((a,b)=>{
+  const x=value(a),y=value(b);
+  const n=(logSortKey==='level'||logSortKey==='line')?Number(x)-Number(y):String(x).localeCompare(String(y),'ko',{numeric:true,sensitivity:'base'});
+  return (logSortAsc?1:-1)*(n||a.index-b.index);
+ });
+}
+document.querySelector('.logs-panel thead').addEventListener('click',event=>{
+ const key=event.target.closest('[data-log-sort]')?.dataset.logSort;if(!key)return;
+ if(logSortKey===key)logSortAsc=!logSortAsc;else{logSortKey=key;logSortAsc=true;}
+ for(const head of document.querySelectorAll('[data-log-sort]')){
+  head.setAttribute('aria-sort',head.dataset.logSort===key?(logSortAsc?'ascending':'descending'):'none');
+  head.textContent=head.dataset.logSort===key?({level:'구분',time:'발생 시각',message:'메시지 / 예외',code:'코드 · 스레드',line:'라인'}[key]+(logSortAsc?' ↑':' ↓')):({level:'구분',time:'발생 시각',message:'메시지 / 예외',code:'코드 · 스레드',line:'라인'}[head.dataset.logSort]);
+ }
+ renderRows(rows,matchedTotal);
+});
+function renderRows(data,total){data=sortedPage(data);const body=$('logRows');body.replaceChildren();$('matchedCount').textContent=fmt(total)+'건';$('pageInfo').textContent=total?`${fmt((currentPage-1)*100+1)}–${fmt(Math.min(total,currentPage*100))} / ${fmt(total)}건`:'0건';$('pageNumber').textContent=`${fmt(currentPage)} / ${fmt(lastPage)}`;$('prevPage').disabled=currentPage<=1;$('nextPage').disabled=currentPage>=lastPage;$('noMatches').classList.toggle('hidden',data.length>0);
  for(const ev of data){const tr=document.createElement('tr');tr.tabIndex=0;const td1=document.createElement('td');const pill=document.createElement('span');pill.className='level-pill '+ev.level;pill.textContent=label[ev.level];td1.append(pill);const td2=document.createElement('td');td2.className='mono';td2.textContent=ev.time||'-';const td3=document.createElement('td');const mes=document.createElement('div');mes.className='message-text';const query=$('searchBox').value.trim();const sensitive=$('caseSensitive').checked;
  const msgMatch=query && (sensitive?ev.message.includes(query):ev.message.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
  if(msgMatch)highlightText(mes,ev.message,query);else mes.textContent=ev.message;
