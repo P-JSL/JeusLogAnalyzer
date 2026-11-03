@@ -78,6 +78,23 @@ def main():
             assert data["size"]==len(expected)
             assert data["offset"]==len(expected)-len(decoded)
             assert data["partial"]==(len(expected)>512)
+            # Resume from an exact byte offset and verify no duplicate historical tail.
+            resume={**q,"fromOffset":max(0,len(expected)-37)}
+            status,delta=post(base,resume)
+            assert status==200,(status,delta)
+            assert delta["offset"]==resume["fromOffset"]
+            assert base64.b64decode(delta["data"])==expected[resume["fromOffset"]:]
+            assert delta["partial"] is False and delta["reset"] is False
+            done=trace(base,resume)[-1]
+            assert done["code"]=="DONE" and base64.b64decode(done["data"])==expected[resume["fromOffset"]:]
+            # A truncated log must explicitly reset the client cursor.
+            status,rotated=post(base,{**q,"fromOffset":len(expected)+1000})
+            assert status==200 and rotated["reset"] is True,(status,rotated)
+            assert base64.b64decode(rotated["data"])==expected[-512:]
+            # A large unread backlog is bounded; continue from offset+length.
+            status,first=post(base,{**q,"fromOffset":0})
+            assert status==200 and first["offset"]==0
+            assert base64.b64decode(first["data"])==expected[:512]
             bad_frames=trace(base,{**q,"fingerprint":"SHA256:"+("A"*43)})
             assert any(f.get("code") in ("HOSTKEY_MISMATCH","HOST_KEY_MISMATCH") for f in bad_frames),bad_frames
             status,data=post(base,{**q,"fingerprint":"SHA256:"+("A"*43)})
