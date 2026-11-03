@@ -26,6 +26,7 @@ func TestRemoteSFTPRejectsInvalidInputsBeforeConnecting(t *testing.T){
   {"symlink style",func(v *remoteTailRequest){v.Path="/logs/./server.log"}},
   {"too large tail",func(v *remoteTailRequest){v.MaxBytes=1<<30}},
   {"zero tail",func(v *remoteTailRequest){v.MaxBytes=0}},
+  {"negative cursor",func(v *remoteTailRequest){n:=int64(-1);v.FromOffset=&n}},
  }
  for _,c:=range cases {
   t.Run(c.label,func(t *testing.T){v:=base;c.edit(&v);if validateRemoteTail(v)==nil{t.Fatal("input must be rejected")}})
