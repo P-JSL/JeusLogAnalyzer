@@ -1,0 +1,173 @@
+name: Publish JEUS Lens v1.0.2 (Go Rust SSH trace and updates)
+
+on:
+  workflow_run:
+    workflows: ["Verify Rust feature parity and native Windows build"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: official-jeus-lens-v1.0.2
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact verified commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Check tag uniqueness and both CI gates
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v1.0.2
+          VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, not overwriting anything."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "exists=false" >> "$GITHUB_OUTPUT"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG exists without published release; refusing ambiguous release."
+            exit 1
+          fi
+          test -s RELEASE_NOTES_v1.0.2.md
+          test -s rust/Cargo.lock
+          locked_version="$(sed -n '/^name = "jeus-lens-rust"/{n;p;}' rust/Cargo.lock)"
+          if [ "$locked_version" != 'version = "1.0.2"' ]; then
+            echo "::error file=rust/Cargo.lock::Rust package version mismatch: expected 1.0.2, got '${locked_version:-not found}'"
+            exit 1
+          fi
+          grep -Fq 'JEUS LENS <span>v1.0.2</span>' web/index.html
+          test -s web/updater.js
+          test -s remote_sftp_trace.go
+          test -s rust/src/updater.rs
+          test -s rust/src/remote.rs
+          grep -Fq 'currentAppVersion="1.0.2"' updater.go
+          grep -Fq 'pub const VERSION:&str="1.0.2"' rust/src/updater.rs
+          current="$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')"
+          test "$current" = "$VERIFIED_SHA" || { echo "::error::Main changed from the verified Rust commit."; exit 1; }
+
+          go_id=""
+          for attempt in $(seq 1 60); do
+            match="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow build.yml --branch main --limit 80 --json databaseId,headSha,conclusion,event --jq ".[] | select(.headSha == \"$VERIFIED_SHA\" and .event == \"push\") | [.databaseId, .conclusion] | @tsv" | head -n 1)"
+            if [ -n "$match" ]; then
+              read -r possible_id go_conclusion <<< "$match"
+              if [ "$go_conclusion" = success ]; then go_id="$possible_id"; break; fi
+              if [ "$go_conclusion" = failure ] || [ "$go_conclusion" = cancelled ]; then
+                echo "::error::Go verification did not pass for commit $VERIFIED_SHA"
+                exit 1
+              fi
+            fi
+            sleep 15
+          done
+          test -n "$go_id" || { echo "::error::No successful Go CI for $VERIFIED_SHA"; exit 1; }
+          echo "go_id=$go_id" >> "$GITHUB_OUTPUT"
+          printf 'Validated both Go and Rust CI for %s; Go run %s\n' "$VERIFIED_SHA" "$go_id"
+
+      - name: Download exact successful Go and Rust Windows builds
+        if: steps.gate.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GO_RUN_ID: ${{ steps.gate.outputs.go_id }}
+          RUST_RUN_ID: ${{ github.event.workflow_run.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/go dist/rust
+          gh run download "$GO_RUN_ID" --repo "$GITHUB_REPOSITORY" --name JEUS-Lens-Windows-x64 --dir dist/go
+          gh run download "$RUST_RUN_ID" --repo "$GITHUB_REPOSITORY" --name JEUS-Lens-Rust-Windows-x64-PREVIEW --dir dist/rust
+          test -s dist/go/JEUS_Lens_Windows_x64.exe
+          test -s dist/rust/jeus-lens-rust.exe
+          file dist/go/JEUS_Lens_Windows_x64.exe | grep -Ei 'PE32.*x86-64'
+          file dist/rust/jeus-lens-rust.exe | grep -Ei 'PE32.*x86-64'
+          cp dist/go/JEUS_Lens_Windows_x64.exe dist/JEUS_Lens_Windows_x64.exe
+          cp dist/rust/jeus-lens-rust.exe dist/JEUS_Lens_Rust_Windows_x64.exe
+
+      - name: Package both distributions and independent SHA256 checksums
+        if: steps.gate.outputs.exists == 'false'
+        env:
+          VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$VERIFIED_SHA" > dist/SOURCE_COMMIT.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile, ZIP_DEFLATED
+          d=Path("dist")
+          with ZipFile(d/"JEUS_Lens_Windows_x64_v1.0.2.zip","w",compression=ZIP_DEFLATED,compresslevel=9) as z:
+              z.write(d/"JEUS_Lens_Windows_x64.exe","JEUS_Lens_Windows_x64.exe")
+              z.write("README.md","README.md")
+              z.write("RELEASE_NOTES_v1.0.2.md","RELEASE_NOTES.md")
+              z.write(d/"SOURCE_COMMIT.txt","SOURCE_COMMIT.txt")
+          with ZipFile(d/"JEUS_Lens_Rust_Windows_x64_v1.0.2.zip","w",compression=ZIP_DEFLATED,compresslevel=9) as z:
+              z.write(d/"JEUS_Lens_Rust_Windows_x64.exe","JEUS_Lens_Rust_Windows_x64.exe")
+              z.write("rust/README.md","README_Rust.md")
+              z.write("RELEASE_NOTES_v1.0.2.md","RELEASE_NOTES.md")
+              z.write(d/"SOURCE_COMMIT.txt","SOURCE_COMMIT.txt")
+          PY
+          cd dist
+          sha256sum JEUS_Lens_Windows_x64.exe JEUS_Lens_Windows_x64_v1.0.2.zip > SHA256SUMS.txt
+          sha256sum JEUS_Lens_Rust_Windows_x64.exe JEUS_Lens_Rust_Windows_x64_v1.0.2.zip > SHA256SUMS_Rust.txt
+          sha256sum -c SHA256SUMS.txt
+          sha256sum -c SHA256SUMS_Rust.txt
+
+      - name: Create draft v1.0.2 with six verified assets
+        if: steps.gate.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v1.0.2
+          VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          current="$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')"
+          test "$current" = "$VERIFIED_SHA" || { echo "::error::Main moved before publication"; exit 1; }
+          gh release create "$TAG" \
+            dist/JEUS_Lens_Windows_x64.exe \
+            dist/JEUS_Lens_Windows_x64_v1.0.2.zip \
+            dist/SHA256SUMS.txt \
+            dist/JEUS_Lens_Rust_Windows_x64.exe \
+            dist/JEUS_Lens_Rust_Windows_x64_v1.0.2.zip \
+            dist/SHA256SUMS_Rust.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$VERIFIED_SHA" \
+            --title "JEUS Lens v1.0.2 — Live SSH Diagnostics and Auto Update" \
+            --notes-file RELEASE_NOTES_v1.0.2.md \
+            --draft
+
+      - name: Re-download, hash-verify and publish the official release
+        if: steps.gate.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v1.0.2
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p verify
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir verify \
+            --pattern '*.exe' --pattern '*.zip' --pattern 'SHA256SUMS*.txt'
+          cd verify
+          sha256sum -c SHA256SUMS.txt
+          sha256sum -c SHA256SUMS_Rust.txt
+          cd ..
+          test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')" = 6
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease,assets \
+            --jq '{tagName,isDraft,isPrerelease,assets:[.assets[].name]}'
+          test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = false

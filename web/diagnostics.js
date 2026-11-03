@@ -8,6 +8,7 @@
   const EXCEPTION=/(?:[\w$]+\.)*[A-Za-z_$][\w$]*(?:Exception|Error)\b/;
   const ERROR_CODE=/\b(?:ORA|PLS)-\d{4,5}\b|\bSQL\s*STATE\s*[:=]?\s*[A-Z0-9]{5}\b/i;
   const SQL=/^\s*(?:(?:==>|#{3})\s*)?(?:Preparing|Executing SQL|SQL|Query|Statement)\s*[:=]\s*(.+)$/i;
+  const ORACLE_SQL=/\[SQLService\]\s*-\s*\[ORACLE\]\s*Begin\s+((?:SELECT|INSERT|UPDATE|DELETE|MERGE|WITH|BEGIN|CALL)\b.*)$/i;
   const EXCEPTION_LINE=/^\s*(?:(Caused by|Suppressed)\s*:\s*|#{3}\s*Cause\s*:\s*)?((?:[A-Za-z_$][\w$]*\.)*[A-Za-z_$][\w$]*(?:Exception|Error))\b/;
   const DB_CODE_ALL=/\b(?:ORA|PLS)-\d{4,5}\b/gi;
   const SQL_STATE_ALL=/\bSQL\s*STATE\s*[:=]?\s*([A-Z0-9]{5})\b/gi;
@@ -58,6 +59,8 @@
       if(firstCode<0 && ERROR_CODE.test(line))firstCode=i;
       const fm=FRAME.exec(line);
       if(fm)frames.push({method:fm[1],source:fm[2],sourceLine:Number(fm[3]),logLine:firstLine+i,at:i});
+      const oracle=ORACLE_SQL.exec(line);
+      if(oracle)add('sql','SQL',oracle[1],i);
       const sm=SQL.exec(line);
       if(sm && (/\b(?:SELECT|INSERT|UPDATE|DELETE|MERGE|WITH|CALL|BEGIN|CREATE|ALTER|DROP)\b/i.test(sm[1]) || /^SQL\s*[:=]/i.test(line)))add('sql','SQL',sm[1],i);
       const bm=BIND.exec(line);
@@ -68,7 +71,7 @@
         }else for(const [k,v] of splitBindings(val).entries())add('bind','bind['+(k+1)+']',v,i);
       }
       // Named inputs from the same event. Do not infer database values that were not logged.
-      if(!fm && !/^\s*(?:(?:Caused by|Suppressed)\b|#{3}\s*Cause\s*:|SQL\s*STATE\s*[:=])/i.test(line) && !sm){
+      if(!fm && !/^\s*(?:(?:Caused by|Suppressed)\b|#{3}\s*Cause\s*:|SQL\s*STATE\s*[:=])/i.test(line) && !sm && !oracle){
         const fieldLine=line.replace(/^\s*(?:Payload|Data|Request|Params?|Context|Input)\s*[:=]\s*(?=[\w.-]+\s*[:=])/i,'');
         FIELD.lastIndex=0;
         for(const m of fieldLine.matchAll(FIELD)){

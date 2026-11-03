@@ -1,0 +1,36 @@
+[package]
+name = "jeus-lens-rust"
+version = "1.0.4"
+edition = "2021"
+rust-version = "1.85"
+description = "Independent native Rust backend for JEUS Lens"
+
+[dependencies]
+axum = { version = "0.8", features = ["http1", "json"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+sha2 = "0.10"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+encoding_rs = "0.8"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+rand = "0.8"
+hex = "0.4"
+futures-util = "0.3"
+bytes = "1"
+rust-embed = "8"
+mime_guess = "2"
+russh = { version = "0.63.3", default-features = false, features = ["ring", "flate2", "rsa"] }
+russh-sftp = "3.0.1"
+async-trait = "0.1"
+base64 = "0.22"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"

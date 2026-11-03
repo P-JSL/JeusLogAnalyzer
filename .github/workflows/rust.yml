@@ -1,0 +1,135 @@
+name: Verify Rust feature parity and native Windows build
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'rust/**'
+      - 'tests/rust_parity.py'
+      - 'tests/rust_windows_runtime.py'
+      - 'tests/rust_sftp_smoke.py'
+      - 'tests/update_network_smoke.py'
+      - 'tests/rust_large_stream.py'
+      - '.github/workflows/rust.yml'
+      - '.github/workflows/rust-release.yml'
+      - '.github/workflows/release-v1.0.2.yml'
+      - 'web/**'
+      - 'remote_sftp.go'
+      - 'remote_sftp_trace.go'
+      - 'remote_sftp_test.go'
+      - '.github/workflows/release-v1.0.3.yml'
+      - '.github/workflows/release-v1.0.4.yml'
+  pull_request:
+    paths:
+      - 'rust/**'
+      - 'tests/rust_parity.py'
+      - 'tests/rust_windows_runtime.py'
+      - 'tests/rust_sftp_smoke.py'
+      - 'tests/update_network_smoke.py'
+      - 'tests/rust_large_stream.py'
+      - '.github/workflows/rust.yml'
+      - 'web/**'
+      - 'remote_sftp.go'
+      - 'remote_sftp_trace.go'
+      - 'remote_sftp_test.go'
+      - '.github/workflows/release-v1.0.2.yml'
+      - '.github/workflows/release-v1.0.3.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: rust-parity-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-linux-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          shared-key: jeus-rust-native
+      - name: Native Rust compile and unit tests
+        working-directory: rust
+        run: |
+          cargo fmt
+          cargo test --all-targets --locked -- --nocapture
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo build --release --locked
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Go vs Rust API, binary index and diagnostic parity
+        run: |
+          go build -o /tmp/jeus-go .
+          python3 tests/rust_parity.py /tmp/jeus-go rust/target/release/jeus-lens-rust
+      - name: Go/Rust exact 1GiB streaming and binary-index parity
+        run: timeout 1200s python3 tests/rust_large_stream.py /tmp/jeus-go rust/target/release/jeus-lens-rust
+      - name: SFTP real localhost server protocol and read-only integration
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends openssh-server
+          sudo mkdir -p /run/sshd
+          sudo useradd -m -s /bin/sh jeus_ci_sftp
+          echo 'jeus_ci_sftp:synthetic-testing-only' | sudo chpasswd
+          sudo ssh-keygen -q -t ed25519 -f /tmp/jeus_ci_hostkey -N ''
+          python3 - <<'PY'
+          from pathlib import Path
+          f=Path('/tmp/jeus_ci_server.log')
+          f.write_bytes((b'[2026-10-30][INFO] synthetic sftp line\n')*60)
+          f.with_name('server-link.log').symlink_to(f)
+          PY
+          cat > /tmp/jeus_ci_sshd_config <<'CONFIG'
+          Port 27721
+          ListenAddress 127.0.0.1
+          HostKey /tmp/jeus_ci_hostkey
+          UsePAM no
+          PasswordAuthentication yes
+          KbdInteractiveAuthentication no
+          PermitRootLogin no
+          AllowUsers jeus_ci_sftp
+          StrictModes yes
+          Subsystem sftp internal-sftp
+          ForceCommand internal-sftp
+          AllowTcpForwarding no
+          X11Forwarding no
+          CONFIG
+          sudo /usr/sbin/sshd -f /tmp/jeus_ci_sshd_config -E /tmp/jeus_ci_sshd.log
+          fingerprint="$(ssh-keygen -lf /tmp/jeus_ci_hostkey.pub -E sha256 | awk '{print $2}')"
+          python3 tests/rust_sftp_smoke.py rust/target/release/jeus-lens-rust 27721 "$fingerprint" /tmp/jeus_ci_server.log jeus_ci_sftp synthetic-testing-only
+          python3 tests/rust_sftp_smoke.py /tmp/jeus-go 27721 "$fingerprint" /tmp/jeus_ci_server.log jeus_ci_sftp synthetic-testing-only
+      - name: Live private GitHub updater metadata check (no install)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tests/update_network_smoke.py /tmp/jeus-go rust/target/release/jeus-lens-rust
+
+  native-windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          shared-key: jeus-rust-native
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test and build independent native Rust Windows x64 application
+        working-directory: rust
+        run: |
+          cargo test --all-targets --locked
+          cargo build --release --locked
+          Get-Item target/release/jeus-lens-rust.exe
+      - name: Real Windows EXE HTTP and browser-asset integration
+        run: python tests/rust_windows_runtime.py rust/target/release/jeus-lens-rust.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JEUS-Lens-Rust-Windows-x64-PREVIEW
+          path: rust/target/release/jeus-lens-rust.exe
+          retention-days: 7
+          if-no-files-found: error

@@ -389,6 +389,8 @@ func matchesGroup(rec diskRecord, group string) bool {
 		return rec.Category == 0 && rec.Level == 1
 	case "error":
 		return rec.Level == 1
+	case "review":
+		return rec.Reserved&1 != 0
 	case "warning":
 		return rec.Level == 2
 	case "info":
@@ -427,7 +429,7 @@ func (s *engine) filter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch req.Group {
-	case "all", "sql", "otherError", "error", "warning", "info":
+	case "all", "sql", "otherError", "error", "review", "warning", "info":
 	default:
 		if strings.HasPrefix(req.Group, "issue:") && meta.IssueVersion == 1 {
 			id := strings.TrimPrefix(req.Group, "issue:")
@@ -507,7 +509,7 @@ func (s *engine) filter(w http.ResponseWriter, r *http.Request) {
 			apiError(w, "damaged index", 500)
 			return
 		}
-		rec := diskRecord{Offset: binary.LittleEndian.Uint64(recordBytes[:8]), Length: binary.LittleEndian.Uint32(recordBytes[8:12]), Level: recordBytes[20], Category: recordBytes[21], Subtype: recordBytes[22]}
+		rec := diskRecord{Offset: binary.LittleEndian.Uint64(recordBytes[:8]), Length: binary.LittleEndian.Uint32(recordBytes[8:12]), Level: recordBytes[20], Category: recordBytes[21], Subtype: recordBytes[22], Reserved: recordBytes[23]}
 		if selectedIssue != 0 {
 			var ref [8]byte
 			if _, err := io.ReadFull(issueReader, ref[:]); err != nil {
@@ -727,4 +729,8 @@ func (s *engine) register(mux *http.ServeMux, host string) {
 	mux.HandleFunc("/api/page", secured(s.page, false))
 	mux.HandleFunc("/api/index", secured(s.indexChunk, false))
 	mux.HandleFunc("/api/page-by-ids", secured(s.pageByIDs, true))
+	mux.HandleFunc("/api/remote-tail", secured(remoteTail, true))
+ mux.HandleFunc("/api/remote-trace", secured(remoteTrace, true))
+ mux.HandleFunc("/api/update/check", secured(updateCheck, true))
+ mux.HandleFunc("/api/update/apply", secured(updateApply, true))
 }

@@ -77,3 +77,73 @@ button.issue-item:hover,button.issue-item:focus-visible{background:#263954;borde
 .surge-stat span{font-size:11px;color:#bdcee1}
 .surge-footnote{margin:12px 0 0}
 @media(max-width:650px){.surge-row{align-items:flex-start;flex-direction:column}}
+
+/* Read-only remote tail: deliberately separate from the imported-file archive. */
+.remote-panel{background:#141d2b;border:1px solid #283449;border-radius:10px;padding:20px 23px;margin-bottom:20px}
+.remote-panel .panel-heading{gap:15px;flex-wrap:wrap}
+.remote-fields{display:grid;grid-template-columns:2fr 1fr 2fr 2fr;gap:10px;margin:15px 0}
+.remote-fields label{font-size:11px;color:#94a5bf;display:flex;flex-direction:column;gap:6px}
+.remote-fields label.remote-wide{grid-column:span 2}
+.remote-fields input{width:100%;border:1px solid #344562;border-radius:6px;background:#0f1723;color:#dfebf7;padding:9px 10px;min-width:0}
+.remote-actions{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.remote-actions select{background:#0e1725;color:#d7e2f1;border:1px solid #374761;border-radius:6px}
+.remote-output{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;max-height:310px;overflow:auto;background:#0e1420;border:1px solid #263449;border-radius:8px;margin:12px 0 9px;padding:14px;color:#cdd9ec;line-height:1.65}
+.remote-output:empty{display:none}
+@media(max-width:1090px){.remote-fields{grid-template-columns:1fr 1fr}.remote-fields label.remote-wide{grid-column:span 2}}
+
+/* Read-only live SSH diagnostics; never persist raw session traces. */
+.remote-tabbar{display:flex;gap:8px;margin-top:15px;border-bottom:1px solid #344562;padding-bottom:10px}
+.remote-tabbar button{padding:8px 13px;background:transparent;border:1px solid #344562;border-radius:7px;color:#91a6c1;cursor:pointer}
+.remote-tabbar button[aria-selected="true"]{background:#253951;border-color:#4c80b2;color:#e5f2ff;font-weight:700}
+.remote-tabbar button span{font-variant-numeric:tabular-nums;font-size:10px;padding:2px 6px;border-radius:8px;background:#26374b}
+.remote-trace-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px;font-size:11px;color:#9db0cc}
+.remote-trace-head button{padding:6px 10px}
+.remote-trace-output{height:245px;overflow:auto;border:1px solid #263449;border-radius:8px;background:#0a121d;padding:14px;margin-top:10px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;line-height:1.7;color:#b2c6dc;white-space:pre-wrap;overflow-wrap:anywhere}
+.remote-trace-line{padding:3px 4px;border-bottom:1px solid #18263b}
+.remote-trace-key{color:#8eafda}
+.remote-trace-success{color:#b0dbb9}
+.remote-trace-error{color:#ffb9b9;background:#372029}
+.remote-trace-error .remote-trace-key{color:#ff8e95}
+.remote-panel .btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* Multi-middleware SFTP connection profiles. Responsive and session-only. */
+.remote-service-bar,.remote-target-toolbar{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin:12px 0}
+.remote-service-bar label,.remote-target-toolbar label{display:flex;flex-direction:column;gap:5px;flex:1 1 180px;font-size:11px;color:#a6b9d3}
+.remote-service-bar select,.remote-target-toolbar select,.remote-target-toolbar input,.remote-log-insights select{
+ width:100%;min-height:35px;box-sizing:border-box;background:#111e30;border:1px solid #344966;
+ border-radius:7px;color:#e2edfa;padding:7px 10px;font-size:12px
+}
+.remote-service-bar select:focus-visible,.remote-target-toolbar select:focus-visible,
+.remote-target-toolbar input:focus-visible,.remote-log-insights select:focus-visible{outline:2px solid #60a5fa;outline-offset:2px}
+.remote-target-toolbar .btn{min-height:35px;white-space:nowrap}
+.remote-log-insights{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:12px 0 8px;color:#b6c8e0;font-size:11px}
+.remote-log-insights label{display:flex;align-items:center;gap:8px}
+.remote-log-insights select{min-width:140px}
+@media(max-width:640px){.remote-service-bar label,.remote-target-toolbar label{flex-basis:100%}.remote-log-insights label{width:100%}}
+
+
+/* Two independent workspaces: preserve the existing local analyzer DOM and IDs. */
+.sidebar .nav-entry{width:100%;border:0;text-align:left;background:transparent;font:inherit;cursor:pointer}
+.sidebar .nav-entry.active{background:#233354;color:#b8c9ff}
+.sidebar .nav-entry:not(.active):hover{background:#1c293e;color:#d0dcf0}
+.content #remoteWorkspace{display:none}
+.content.remote-mode #remoteWorkspace{display:block}
+.content.remote-mode>:not(#remoteWorkspace){display:none!important}
+#remoteWorkspace>.heading{margin-bottom:20px}
+#remoteWorkspace>.remote-panel{margin-bottom:22px}
+.gateway-settings{padding:11px 14px;background:#111c2b;border:1px solid #2d4060;border-radius:8px;margin-top:14px}
+.gateway-settings .remote-service-bar{margin:0 0 8px}
+.gateway-settings select{width:100%;background:#0e1725;color:#d7e2f1;border:1px solid #374761;border-radius:6px;padding:9px}
+.gateway-settings p{margin:6px 0}
+.remote-analytics,.live-panel{margin-bottom:22px}
+.remote-event-note{margin:0 23px 16px}
+.sort-head{display:inline-flex;gap:5px;align-items:center;color:inherit;background:transparent;border:0;font-size:inherit;font-weight:inherit;letter-spacing:inherit;padding:1px 0;cursor:pointer;text-align:inherit}
+.sort-head:hover,.sort-head:focus-visible{color:#b5cbff;text-decoration:underline}
+.sort-head[aria-sort="ascending"],.sort-head[aria-sort="descending"]{color:#b8ceff}
+#remoteWorkspace .table-wrap,.live-panel .table-wrap{max-height:460px;overflow:auto}
+.live-panel .logs-head{gap:14px;flex-wrap:wrap}
+.live-panel #watchStatus{max-width:460px;overflow-wrap:anywhere}
+.live-panel .table-wrap{margin-bottom:12px}
+.remote-analytics .logs-head{gap:12px;flex-wrap:wrap}
+.remote-analytics select{background:#0f1723;color:#dce5f3;border:1px solid #344562;border-radius:6px;padding:7px}
+@media(max-width:850px){.sidebar .nav-entry:not(.active),.sidebar .nav-entry.active{font-size:0}.sidebar .nav-symbol{font-size:20px}.sidebar .nav-entry{justify-content:center}}
