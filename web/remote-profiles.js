@@ -26,6 +26,7 @@
  function resetPreview(){
   lastText='';lastPartial=false;
   el('remoteOutput').textContent='';
+  window.dispatchEvent(new Event('jeus:remote-updated'));
   el('remoteLogSummary').textContent='선택한 서버의 원격 로그를 조회하면 최근 파일 끝부분을 분석합니다.';
  }
  function snapshot(){
@@ -114,7 +115,14 @@
    httpCount+' · 표시 '+visible+'행';
  }
  window.RemoteLogProfiles={
-  onData(text,data){lastText=text;lastPartial=Boolean(data?.partial);renderPreview()},
+  onData(text,data){
+    if(data?.incremental){lastText+=text;}else{lastText=text;lastPartial=Boolean(data?.partial);}
+    // Keep only a bounded recent window; source log stays on the server.
+    if(lastText.length>512*1024){lastText=lastText.slice(-(512*1024));lastPartial=true;}
+    renderPreview();
+    window.dispatchEvent(new Event('jeus:remote-updated'));
+   },
+   currentText(){return lastText;},
   clear:resetPreview,
   profileNames:profiles
  };
