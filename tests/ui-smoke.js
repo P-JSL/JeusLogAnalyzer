@@ -190,7 +190,7 @@ assert.equal(await js(`document.querySelector('[data-remote-sort="time"]').getAt
 await saveDocsScreenshot('04-remote-sftp.png','.remote-panel');
 await js(`document.querySelector('#navLocal').click()`);
 await until(()=>js(`document.querySelector('#updateApply').disabled===false`));
-assert.match(await js(`document.querySelector('#updateStatus').textContent`),/1\.0\.5/);
+assert.match(await js(`document.querySelector('#updateStatus').textContent`),/1\.0\.6/);
 await js(`document.querySelector('#updateApply').click()`);
 await until(()=>js(`window.updateInstallCount===1`));
 assert.match(await js(`document.querySelector('#updateStatus').textContent`),/자동 재실행/);
