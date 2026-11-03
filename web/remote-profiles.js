@@ -16,6 +16,7 @@
  const source=el('remoteService'),kind=el('remoteLogKind'),path=el('remotePath'),label=el('remoteTargetName'),list=el('remoteTargetList');
  const saved=[];let nextId=1;let selected='',lastText='',lastPartial=false;
  function profileChange(){
+  window.RemoteLogWatch?.reset?.();
   const profile=profiles[source.value]||profiles.other;
   path.placeholder=profile.placeholder;
   el('remoteServiceHint').textContent=profile.hint+' · WebtoB/JEUS 서비스 포트가 아니라 해당 호스트의 SSH/SFTP 포트를 사용하세요.';
@@ -26,18 +27,19 @@
  function resetPreview(){
   lastText='';lastPartial=false;
   el('remoteOutput').textContent='';
+  window.dispatchEvent(new Event('jeus:remote-updated'));
   el('remoteLogSummary').textContent='선택한 서버의 원격 로그를 조회하면 최근 파일 끝부분을 분석합니다.';
  }
  function snapshot(){
   return {id:selected,name:label.value.trim().slice(0,80),service:source.value,kind:kind.value,
-   host:el('remoteHost').value.trim(),port:el('remotePort').value,user:el('remoteUser').value,
+   host:el('remoteHost').value.trim(),port:el('remotePort').value,user:el('remoteUser').value,gateway:el('remoteGatewayProduct')?.value||'direct',
    fingerprint:el('remoteFingerprint').value.trim(),path:path.value.trim(),encoding:el('remoteEncoding').value};
  }
  function choose(id){
   if(el('remoteDisconnect')?.disabled===false)el('remoteDisconnect').click();
   if(el('remoteAuto').checked){el('remoteAuto').checked=false;el('remoteAuto').dispatchEvent(new Event('change'))}
   selected=id;const match=saved.find(x=>x.id===id);
-  if(!match){label.value='';for(const id of ['remoteHost','remoteUser','remotePass','remoteFingerprint','remotePath'])el(id).value='';el('remotePort').value='22';source.value='jeus';kind.value='app';profileChange();return}
+  if(!match){label.value='';for(const id of ['remoteHost','remoteUser','remotePass','remoteFingerprint','remotePath'])el(id).value='';el('remotePort').value='22';source.value='jeus';kind.value='app';if(el('remoteGatewayProduct'))el('remoteGatewayProduct').value='direct';profileChange();window.JeusGateway?.update?.();return}
   label.value=match.name;source.value=match.service;kind.value=match.kind;
   for(const key of ['host','port','user','fingerprint','path']){
    const ids={host:'remoteHost',port:'remotePort',user:'remoteUser',fingerprint:'remoteFingerprint',path:'remotePath'};
@@ -45,7 +47,7 @@
   }
   el('remoteEncoding').value=match.encoding;
   el('remotePass').value=''; // Credentials are not duplicated or carried across server profiles.
-  profileChange();kind.value=match.kind;
+  profileChange();kind.value=match.kind;if(el('remoteGatewayProduct'))el('remoteGatewayProduct').value=match.gateway||'direct';window.JeusGateway?.update?.();
   el('remoteStatus').textContent=match.name+' 선택됨 · 비밀번호를 다시 입력하고 연결하세요.';
   el('remoteTraceClear').click();
  }
@@ -114,7 +116,14 @@
    httpCount+' · 표시 '+visible+'행';
  }
  window.RemoteLogProfiles={
-  onData(text,data){lastText=text;lastPartial=Boolean(data?.partial);renderPreview()},
+  onData(text,data){
+    if(data?.incremental){lastText+=text;}else{lastText=text;lastPartial=Boolean(data?.partial);}
+    // Keep only a bounded recent window; source log stays on the server.
+    if(lastText.length>512*1024){lastText=lastText.slice(-(512*1024));lastPartial=true;}
+    renderPreview();
+    window.dispatchEvent(new Event('jeus:remote-updated'));
+   },
+   currentText(){return lastText;},
   clear:resetPreview,
   profileNames:profiles
  };

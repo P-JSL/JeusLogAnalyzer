@@ -5,7 +5,7 @@
  const el=id=>document.getElementById(id);
  const connect=el('remoteConnect'),readButton=el('remoteRead'),disconnect=el('remoteDisconnect');
  const status=el('remoteStatus'),output=el('remoteOutput'),traceOutput=el('remoteTraceOutput');
- let busy=false,refresh=null,controller=null,generation=0;
+ let busy=false,refresh=null,controller=null,generation=0,nextOffset=null,decoder=null,requestMore=false;
  const fields=['remoteHost','remotePort','remoteUser','remotePass','remoteFingerprint','remotePath','remoteService','remoteEncoding'];
  const logLines=[];
  const codes={START:'접속 시작',VALID:'입력 검증',CONNECTING:'TCP/SSH 연결 시도',CONNECTED:'TCP 연결 성공',SSH_CONNECTED:'SSH 연결 성공',
@@ -16,7 +16,8 @@
   FILE_STAT_FAILED:'파일 접근 실패',OPEN_DENIED:'파일 열기 실패',SFTP_UNAVAILABLE:'SFTP 사용 불가',
   SSH_TIMEOUT:'접속 제한 시간 초과',INVALID_CONFIG:'입력값 오류'};
  function values(){return {host:el('remoteHost').value.trim(),port:Number(el('remotePort').value),user:el('remoteUser').value,
-  password:el('remotePass').value,fingerprint:el('remoteFingerprint').value.trim(),path:el('remotePath').value.trim(),maxBytes:512*1024}}
+  password:el('remotePass').value,fingerprint:el('remoteFingerprint').value.trim(),path:el('remotePath').value.trim(),maxBytes:512*1024,
+  ...(nextOffset===null?{}:{fromOffset:nextOffset})}}
  function tab(which){
   const trace=which==='trace';
   el('remoteTabContent').setAttribute('aria-selected',String(!trace));
@@ -43,8 +44,9 @@
   if(level==='error'){status.textContent='연결 실패 ['+code+'] '+detail;tab('trace')}
  }
  function stopAuto(){if(refresh){clearInterval(refresh);refresh=null}}
+ function resetStream(){nextOffset=null;decoder=null;requestMore=false;window.RemoteLogProfiles?.clear?.();}
  function stop(){
-  window.RemoteLogProfiles?.clear?.();
+  resetStream();
   generation++;
   if(controller){controller.abort();controller=null}
   busy=false;connect.disabled=false;readButton.disabled=false;disconnect.disabled=true;
@@ -55,16 +57,23 @@
  function showData(data){
   const binary=atob(data.data||'');
   const bytes=Uint8Array.from(binary,char=>char.charCodeAt(0));
-  const decoded=new TextDecoder(el('remoteEncoding').value,{fatal:false}).decode(bytes);
-  if(window.RemoteLogProfiles?.onData){window.RemoteLogProfiles.onData(decoded,data)}
-  else{output.textContent=(data.partial?'[파일 끝부분 512KiB만 표시합니다. 앞부분은 포함되지 않습니다.]\\n':'')+decoded;}
-  status.textContent='조회 완료 · 원격 크기 '+Number(data.size).toLocaleString('ko-KR')+' bytes · '+new Date().toLocaleTimeString('ko-KR');
+  const reset=Boolean(data.reset);
+  const incremental=nextOffset!==null&&!reset;
+  if(reset){resetStream();addTrace({level:'info',code:'FILE_ROTATED',message:'원격 로그의 크기가 감소하여 최신 구간부터 다시 조회합니다.'});}
+  if(incremental && Number(data.offset)!==nextOffset)throw Error('원격 로그 위치가 연속되지 않습니다. 연결 대상을 확인한 뒤 새 연결을 시작하세요.');
+  if(!decoder)decoder=new TextDecoder(el('remoteEncoding').value,{fatal:false});
+  const decoded=decoder.decode(bytes,{stream:true});
+  nextOffset=Number(data.offset)+bytes.length;
+  if(!Number.isSafeInteger(nextOffset)||nextOffset<0)throw Error('원격 로그의 읽기 위치가 올바르지 않습니다.');
+  if(window.RemoteLogProfiles?.onData)window.RemoteLogProfiles.onData(decoded,{...data,incremental});
+  else output.textContent=(incremental?output.textContent:'')+decoded;
+  requestMore=nextOffset<Number(data.size)&&bytes.length>0;
+  status.textContent='조회 완료 · 위치 '+nextOffset.toLocaleString('ko-KR')+'/'+Number(data.size).toLocaleString('ko-KR')+' bytes · '+new Date().toLocaleTimeString('ko-KR');
  }
  async function runTrace(manual=true){
   if(busy||document.hidden)return;
   const id=++generation;
   // A stale preview must never survive a new request, including failed refresh.
-  window.RemoteLogProfiles?.clear?.();
   const abort=new AbortController();controller=abort;busy=true;
   connect.disabled=true;readButton.disabled=true;disconnect.disabled=false;
   if(manual){logLines.length=0;traceOutput.replaceChildren();el('remoteTraceCount').textContent='0';tab('trace')}
@@ -99,12 +108,13 @@
   }finally{
    if(id===generation){
     controller=null;busy=false;connect.disabled=false;readButton.disabled=false;disconnect.disabled=true;
-    if(logLines.some(x=>x.level==='error')){el('remoteAuto').checked=false;stopAuto()}
+    if(logLines.some(x=>x.level==='error')){el('remoteAuto').checked=false;stopAuto();}
+     else if(requestMore){requestMore=false;queueMicrotask(()=>void runTrace(false));}
    }
   }
  }
  function updateAuto(){stopAuto();if(el('remoteAuto').checked)refresh=setInterval(()=>{if(!document.hidden)void runTrace(false)},10000)}
- connect.addEventListener('click',()=>void runTrace(true));
+ connect.addEventListener('click',()=>{resetStream();void runTrace(true)});
  readButton.addEventListener('click',()=>void runTrace(true));
  disconnect.addEventListener('click',stop);
  el('remoteTabTrace').addEventListener('click',()=>tab('trace'));
@@ -112,6 +122,7 @@
  el('remoteTraceClear').addEventListener('click',()=>{logLines.length=0;traceOutput.replaceChildren();traceOutput.textContent='진단 기록을 지웠습니다.';el('remoteTraceCount').textContent='0'});
  el('remoteTraceCopy').addEventListener('click',()=>{void navigator.clipboard?.writeText(logLines.map(v=>'['+v.ts+'] ['+v.code+'] '+v.detail).join('\n')).catch(()=>{status.textContent='클립보드 복사를 허용하지 않는 브라우저입니다.'})});
  el('remoteAuto').addEventListener('change',updateAuto);
- for(const field of fields){el(field).addEventListener('change',()=>{el('remoteAuto').checked=false;stopAuto();if(busy)stop();else window.RemoteLogProfiles?.clear?.()})}
+ for(const field of fields){el(field).addEventListener('change',()=>{el('remoteAuto').checked=false;stopAuto();if(busy)stop();else resetStream()})}
  window.addEventListener('pagehide',()=>{if(controller)controller.abort();stopAuto()});
+ window.RemoteLogWatch={reset:resetStream};
 })();

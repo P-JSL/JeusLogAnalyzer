@@ -30,6 +30,7 @@ type remoteTailRequest struct {
  Fingerprint string `json:"fingerprint"`
  Path string `json:"path"`
  MaxBytes int64 `json:"maxBytes"`
+ FromOffset *int64 `json:"fromOffset,omitempty"`
 }
 
 var remoteHostname = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$`)
@@ -56,6 +57,7 @@ func validateRemoteTail(v remoteTailRequest) error {
   return errors.New("지원하는 텍스트 로그(.log/.out/.txt/.trace/.err, access_log, syslog 등)만 읽을 수 있습니다. 압축 파일은 지원하지 않습니다")
  }
  if v.MaxBytes<1||v.MaxBytes>512*1024 {return errors.New("한 번에 최대 512KiB만 조회할 수 있습니다")}
+ if v.FromOffset!=nil&&*v.FromOffset<0{return errors.New("증분 조회 시작 위치가 잘못되었습니다")}
  return nil
 }
 
@@ -97,8 +99,11 @@ func remoteTail(w http.ResponseWriter,r *http.Request) {
  defer file.Close()
  size:=info.Size()
  start:=size-q.MaxBytes
+ reset:=false
+ if q.FromOffset!=nil {if *q.FromOffset>size {reset=true}else{start=*q.FromOffset}}
  if start<0{start=0}
  count:=size-start
+ if count>q.MaxBytes{count=q.MaxBytes}
  if count<0 || count>512*1024 {apiError(w,"잘못된 원격 파일 크기입니다",400);return}
  buf:=make([]byte,int(count))
  n,e:=file.ReadAt(buf,start)
@@ -110,5 +115,6 @@ func remoteTail(w http.ResponseWriter,r *http.Request) {
   Offset int64 `json:"offset"`
   Data []byte `json:"data"`
   Partial bool `json:"partial"`
- }{Size:size,Offset:start,Data:buf,Partial:start>0})
+  Reset bool `json:"reset"`
+ }{Size:size,Offset:start,Data:buf,Partial:start>0&&q.FromOffset==nil,Reset:reset})
 }

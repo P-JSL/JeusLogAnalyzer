@@ -39,6 +39,8 @@ jobs:
           node --check web/search-worker.js
           node --check web/remote-sftp.js
           node --check web/remote-profiles.js
+          node --check web/local-live.js
+          node --check web/workspace.js
           node --check web/updater.js
       - name: JavaScript parser and metadata search tests
         run: node --test tests/parser.test.js tests/search-worker.test.js tests/diagnostics.test.js
