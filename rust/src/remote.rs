@@ -9,7 +9,7 @@ use tokio::io::{AsyncReadExt,AsyncSeekExt};
 use base64::{engine::general_purpose::STANDARD,Engine};
 #[derive(Deserialize,Clone)]
 #[serde(rename_all="camelCase")]
-pub struct RemoteReq{host:String,port:u16,user:String,password:String,fingerprint:String,path:String,max_bytes:u64}
+pub struct RemoteReq{host:String,port:u16,user:String,password:String,fingerprint:String,path:String,max_bytes:u64,#[serde(default)]from_offset:Option<u64>}
 fn check(q:&RemoteReq)->Result<(),String>{
  // Match Go: DNS-style names or valid IPv4/IPv6 literals (no arbitrary colons).
  static HOSTNAME:std::sync::OnceLock<regex::Regex>=std::sync::OnceLock::new();
@@ -54,11 +54,11 @@ pub async fn remote_tail(Json(q):Json<RemoteReq>)->Response{
   let sftp=SftpSession::new(channel.into_stream()).await.map_err(|_|"SFTP 프로토콜 실패")?;
   let meta=sftp.symlink_metadata(q.path.clone()).await.map_err(|_|"원격 로그 경로 조회 실패")?;
   if !meta.is_regular()||meta.is_symlink(){return Err("일반 로그 파일만 조회할 수 있습니다")}
-  let size=meta.len();let start=size.saturating_sub(q.max_bytes);
+  let size=meta.len();let reset=q.from_offset.is_some_and(|offset|offset>size);let start=if reset{size.saturating_sub(q.max_bytes)}else{q.from_offset.unwrap_or_else(||size.saturating_sub(q.max_bytes))};let count=(size-start).min(q.max_bytes);
   let mut file=sftp.open(q.path.clone()).await.map_err(|_|"원격 로그 읽기 거부")?;
   file.seek(SeekFrom::Start(start)).await.map_err(|_|"원격 로그 위치 이동 실패")?;
-  let mut data=Vec::with_capacity((size-start)as usize);file.take(q.max_bytes).read_to_end(&mut data).await.map_err(|_|"원격 로그 읽기 실패")?;
-  Ok::<_,&str>(json!({"size":size,"offset":start,"data":STANDARD.encode(&data),"partial":start>0}))
+  let mut data=Vec::with_capacity((size-start)as usize);file.take(count).read_to_end(&mut data).await.map_err(|_|"원격 로그 읽기 실패")?;
+  Ok::<_,&str>(json!({"size":size,"offset":start,"data":STANDARD.encode(&data),"partial":start>0&&q.from_offset.is_none(),"reset":reset}))
  }).await;
  match res{Ok(Ok(v))=>Json(v).into_response(),Ok(Err(e))=>api_error(StatusCode::BAD_GATEWAY,e),Err(_)=>api_error(StatusCode::GATEWAY_TIMEOUT,"SFTP 20초 제한 초과")}
 }
@@ -147,15 +147,15 @@ pub async fn remote_trace(Json(q):Json<RemoteReq>)->Response{
    trace_send(&tx,"stat","info","LSTAT","로그 파일 경로, 유형 및 크기를 조회합니다.").await;
    let meta=match sftp.symlink_metadata(q.path.clone()).await{Ok(v)=>v,Err(_)=>{trace_send(&tx,"stat","error","FILE_STAT_FAILED","파일 조회 실패. 원격 경로, 존재 여부 및 읽기 권한을 확인하세요.").await;return}};
    if !meta.is_regular()||meta.is_symlink(){trace_send(&tx,"stat","error","NOT_REGULAR","보안을 위해 디렉터리 및 심볼릭 링크 파일은 읽지 않습니다.").await;return}
-   let size=meta.len();let start=size.saturating_sub(q.max_bytes);
-   trace_send(&tx,"stat","success","FILE_VERIFIED",&format!("로그 확인 · 전체 {}바이트, 읽기 {}바이트",size,size-start)).await;
+   let size=meta.len();let reset=q.from_offset.is_some_and(|offset|offset>size);let start=if reset{size.saturating_sub(q.max_bytes)}else{q.from_offset.unwrap_or_else(||size.saturating_sub(q.max_bytes))};let count=(size-start).min(q.max_bytes);
+   trace_send(&tx,"stat","success","FILE_VERIFIED",&format!("로그 확인 · 전체 {}바이트, 읽기 {}바이트",size,count)).await;
    trace_send(&tx,"read","info","READING","원격 파일 끝부분을 읽고 있습니다.").await;
    let mut file=match sftp.open(q.path.clone()).await{Ok(v)=>v,Err(_)=>{trace_send(&tx,"read","error","OPEN_DENIED","SFTP 파일 열기 거부. 파일 권한을 확인하세요.").await;return}};
    if file.seek(SeekFrom::Start(start)).await.is_err(){trace_send(&tx,"read","error","SEEK_FAILED","원격 파일 위치 이동 실패.").await;return}
-   let mut data=Vec::with_capacity((size-start) as usize);
-   if file.take(q.max_bytes).read_to_end(&mut data).await.is_err(){trace_send(&tx,"read","error","READ_FAILED","SFTP 파일 읽기에 실패했습니다.").await;return}
+   let mut data=Vec::with_capacity(count as usize);
+   if file.take(count).read_to_end(&mut data).await.is_err(){trace_send(&tx,"read","error","READ_FAILED","SFTP 파일 읽기에 실패했습니다.").await;return}
    trace_send(&tx,"read","success","READ_COMPLETE",&format!("{}바이트 읽기 완료",data.len())).await;
-   let final_frame=frame("done","success","DONE","조회 완료. SFTP 세션을 종료합니다.",Some(json!({"size":size,"offset":start,"data":STANDARD.encode(&data),"partial":start>0})));
+   let final_frame=frame("done","success","DONE","조회 완료. SFTP 세션을 종료합니다.",Some(json!({"size":size,"offset":start,"data":STANDARD.encode(&data),"partial":start>0&&q.from_offset.is_none(),"reset":reset})));
    let _=tx.send(final_frame).await;
   };
   tokio::select!{
@@ -172,7 +172,7 @@ pub async fn remote_trace(Json(q):Json<RemoteReq>)->Response{
 #[cfg(test)]mod tests{
  use super::*;
  #[test]fn portable_log_filenames_match_go(){
-  let base=RemoteReq{host:"127.0.0.1".into(),port:22,user:"readonly".into(),password:"test".into(),fingerprint:format!("SHA256:{}", "A".repeat(43)),path:"/logs/server.log".into(),max_bytes:512*1024};
+  let base=RemoteReq{host:"127.0.0.1".into(),port:22,user:"readonly".into(),password:"test".into(),fingerprint:format!("SHA256:{}", "A".repeat(43)),path:"/logs/server.log".into(),max_bytes:512*1024,from_offset:None};
   for filename in [
    "/opt/jeus/logs/JeusServer.log","/opt/webtob/log/access_20261030.log",
    "/opt/webtob/log/error_20261030.log","/opt/webtob/log/system_20261030.log",
