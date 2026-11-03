@@ -10,7 +10,7 @@ use std::time::Duration;
 #[cfg(windows)]
 use futures_util::StreamExt;
 
-pub const VERSION:&str="1.0.4";
+pub const VERSION:&str="1.0.5";
 const RELEASE_API:&str="https://api.github.com/repos/P-JSL/JeusLogAnalyzer";
 const RUST_EXE:&str="JEUS_Lens_Rust_Windows_x64.exe";
 const MAX_DOWNLOAD:u64=120*1024*1024;
@@ -31,7 +31,7 @@ fn github_client()->Result<reqwest::Client,Response>{
  reqwest::Client::builder().timeout(Duration::from_secs(85)).redirect(reqwest::redirect::Policy::limited(4)).build().map_err(|_|bad(StatusCode::BAD_GATEWAY,"GitHub 연결을 준비할 수 없습니다"))
 }
 fn request(client:&reqwest::Client,url:&str,token:&str,accept:&str)->reqwest::RequestBuilder{
- let mut r=client.get(url).header("User-Agent","JEUS-Lens-LocalUpdater/1.0.4").header("X-GitHub-Api-Version","2022-11-28").header("Accept",accept);
+ let mut r=client.get(url).header("User-Agent","JEUS-Lens-LocalUpdater/1.0.5").header("X-GitHub-Api-Version","2022-11-28").header("Accept",accept);
  if !token.is_empty(){r=r.bearer_auth(token)}r
 }
 async fn release(client:&reqwest::Client,token:&str)->Result<Release,Response>{
@@ -111,5 +111,5 @@ async fn apply_windows(input:UpdateInput)->Response{
 #[cfg(test)]
 mod tests{
  use super::*;
- #[test]fn version_order_and_invalid_tag(){assert!(update_available("v1.0.5"));assert!(!update_available("v1.0.4"));assert!(!update_available("v1.0.3"));assert!(!update_available("v1.0.5-rc1"));assert_eq!(version("1.0.4"),Some([1,0,4]));}
+ #[test]fn version_order_and_invalid_tag(){assert!(update_available("v1.0.6"));assert!(!update_available("v1.0.5"));assert!(!update_available("v1.0.4"));assert!(!update_available("v1.0.6-rc1"));assert_eq!(version("1.0.5"),Some([1,0,5]));}
 }

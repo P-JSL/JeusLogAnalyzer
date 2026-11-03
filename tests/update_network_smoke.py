@@ -14,7 +14,7 @@ def invoke(binary,root,token):
           data=json.dumps({"token":token}).encode(),headers={"Content-Type":"application/json","Origin":base})
         with urllib.request.urlopen(req,timeout=25) as resp:
             value=json.loads(resp.read())
-        assert value["currentVersion"]=="1.0.4",value
+        assert value["currentVersion"]=="1.0.5",value
         assert value["asset"].endswith(".exe"),value
         assert value["size"]>0,value
         assert value["runtime"] in ("go","rust")
