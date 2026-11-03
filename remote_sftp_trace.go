@@ -77,8 +77,10 @@ func remoteTrace(w http.ResponseWriter,r *http.Request){
  info,err:=client.Lstat(q.Path)
  if err!=nil{emit("stat","error","FILE_STAT_FAILED","파일 정보 조회 실패. 경로와 파일 읽기 권한을 확인하세요.");return}
  if !info.Mode().IsRegular()||info.Mode()&os.ModeSymlink!=0{emit("stat","error","NOT_REGULAR","심볼릭 링크·디렉터리는 조회할 수 없습니다.");return}
- size:=info.Size();start:=size-q.MaxBytes;if start<0{start=0}
- count:=size-start
+ size:=info.Size();start:=size-q.MaxBytes;reset:=false
+ if q.FromOffset!=nil {if *q.FromOffset>size {reset=true}else{start=*q.FromOffset}}
+ if start<0{start=0}
+ count:=size-start;if count>q.MaxBytes{count=q.MaxBytes}
  if count<0||count>512*1024{emit("stat","error","FILE_SIZE","로그 파일의 크기 정보가 올바르지 않습니다.");return}
  emit("stat","success","FILE_VERIFIED",fmt.Sprintf("로그 확인: 전체 %d바이트, 조회 범위 %d바이트",size,count))
  emit("read","info","READING","원격 파일의 마지막 512KiB 이내를 읽습니다.")
@@ -88,5 +90,5 @@ func remoteTrace(w http.ResponseWriter,r *http.Request){
  data:=make([]byte,int(count));n,readErr:=file.ReadAt(data,start)
  if readErr!=nil&&readErr!=io.EOF{emit("read","error","READ_FAILED","SFTP 파일 읽기 실패. 서버 로그와 권한을 확인하세요.");return}
  emit("read","success","READ_COMPLETE",fmt.Sprintf("총 %d바이트 읽기를 완료했습니다.",n))
- emit("done","success","DONE","조회 완료. SSH/SFTP 요청을 종료합니다.",map[string]any{"size":size,"offset":start,"data":data[:n],"partial":start>0})
+ emit("done","success","DONE","조회 완료. SSH/SFTP 요청을 종료합니다.",map[string]any{"size":size,"offset":start,"data":data[:n],"partial":start>0&&q.FromOffset==nil,"reset":reset})
 }
