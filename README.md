@@ -1,10 +1,10 @@
 # JEUS Lens
 
-**JEUS 로그 분석 도구 · v1.0.4 · Windows x64**
+**JEUS 로그 분석 도구 · v1.0.5 · Windows x64**
 
 JEUS/Java 서버 로그에서 예외, Oracle SQL 오류, 발생 시각 및 관련 로그를 찾아보는 로컬 분석 프로그램입니다. 원격 조회 화면은 WebtoB, Tomcat, Nginx, Apache 및 일반 Linux의 텍스트 로그에도 사용할 수 있습니다. 로그 원본은 파일로 복사 저장하지 않고, 검색과 분석에 필요한 메타데이터만 보관합니다.
 
-[**최신 정식 릴리즈 다운로드**](https://github.com/P-JSL/JeusLogAnalyzer/releases/latest) · [v1.0.4 릴리즈](https://github.com/P-JSL/JeusLogAnalyzer/releases/tag/v1.0.4)
+[**최신 정식 릴리즈 다운로드**](https://github.com/P-JSL/JeusLogAnalyzer/releases/latest) · [v1.0.5 릴리즈](https://github.com/P-JSL/JeusLogAnalyzer/releases/tag/v1.0.5)
 
 **Windows 실행 파일은 Go 원본판과 Rust 백엔드판으로 구분됩니다.** Rust판은 기존 웹 화면을 그대로 내장하되 로그 분석 서버를 Rust로 독립 구현한 버전입니다. 두 파일은 릴리즈의 파일명에서 `Rust` 포함 여부로 구분할 수 있습니다.
 
@@ -23,7 +23,7 @@ JEUS/Java 서버 로그에서 예외, Oracle SQL 오류, 발생 시각 및 관�
 
 ## 1. 설치 및 실행
 
-1. [Releases](https://github.com/P-JSL/JeusLogAnalyzer/releases/tag/v1.0.4)에서 Go판 `JEUS_Lens_Windows_x64_v1.0.4.zip` 또는 Rust판 `JEUS_Lens_Rust_Windows_x64_v1.0.4.zip`을 선택해 다운로드하고 압축을 풉니다. 각 EXE를 개별 다운로드해도 됩니다.
+1. [Releases](https://github.com/P-JSL/JeusLogAnalyzer/releases/tag/v1.0.5)에서 Go판 `JEUS_Lens_Windows_x64_v1.0.5.zip` 또는 Rust판 `JEUS_Lens_Rust_Windows_x64_v1.0.5.zip`을 선택해 다운로드하고 압축을 풉니다. 각 EXE를 개별 다운로드해도 됩니다.
 2. **선택한 ZIP 내부의 EXE를 실행**합니다. 기본 브라우저에서 로컬 주소 `http://127.0.0.1:<임의 포트>/`가 열립니다.
 3. 로그 파일을 선택하면 별도 Java/Python 설치 없이 분석할 수 있습니다.
 
@@ -138,7 +138,7 @@ WebtoB 로그 형식 참고: [WebtoB 5 Fix#4 관리 안내서](https://docs.tmax
 - 로그 형식에 따라 메시지/타임스탬프 인식이 달라질 수 있으며, 운영 서버 SSH/SFTP 연결 및 Windows 실기 호환성은 환경별 검증이 필요합니다.
 - 이 도구는 JEUS 제조사의 공식 인증 제품이 아닙니다.
 
-개발 및 보안 관련 문서: [아키텍처](docs/ARCHITECTURE.md) · [보안](SECURITY.md) · [검증 범위](REVIEW.md) · [v1.0.4 릴리즈 노트](RELEASE_NOTES_v1.0.4.md)
+개발 및 보안 관련 문서: [아키텍처](docs/ARCHITECTURE.md) · [보안](SECURITY.md) · [검증 범위](REVIEW.md) · [v1.0.5 릴리즈 노트](RELEASE_NOTES_v1.0.5.md)
 
 
 ## 개발 브랜치: 실시간 추가 로그 분석 및 Connect 작업공간 (PR #13)
@@ -162,3 +162,7 @@ WebtoB 로그 형식 참고: [WebtoB 5 Fix#4 관리 안내서](https://docs.tmax
 - **구분:** Go/Rust 공통으로 메타데이터의 심각도를 3개 스트림에 한 번 분배(O(n), 제한된 메모리)해 임시 순서 인덱스를 만듭니다. 내림차순은 생성된 인덱스를 뒤에서 읽어 재계산하지 않습니다. 원본 로그는 저장하지 않습니다.
 - **발생 시각 / 메시지 / 코드·스레드:** 해당 열은 원본 로그의 텍스트 내용이 필요하므로 브라우저의 `global-sort-worker.js`에서 전체 대상 이벤트의 값을 청크 단위로 읽어 정렬합니다. 계산된 순서를 유지해 다음 페이지나 정렬 방향 변경 시 다시 분석하지 않습니다. 아주 많은 고유 메시지의 전체 정렬은 브라우저 메모리 및 파일 처리 시간에 영향을 받을 수 있으며, 용량/메모리 한계로 실패하면 기존 라인 순서로 안전하게 복귀합니다.
 - SSH/SFTP **Connect** 작업공간은 기존의 최근 조회 버퍼에 대한 정렬을 유지합니다. 서버 전체 로그를 저장/검색하지 않으므로 현재 별도의 원격 전체 파일 정렬 기능은 제공하지 않습니다.
+
+## v1.0.5 전체 로그 정렬 및 성능 개선
+
+Go·Rust의 구분(오류/경고/일반) 정렬은 전체 대상 인덱스를 대상으로 버킷 방식으로 계산합니다(O(n), bounded memory). 라인은 전체 정방향/역방향 순서를 인덱스로 바로 읽습니다. 발생 시각·메시지·코드/스레드는 브라우저가 보유한 원본 파일에서 전체 대상의 정렬 키를 청크로 읽어 별도 Worker에서 정렬하고 결과를 재사용합니다. 화면에는 정렬된 전체 결과 중 페이지당 100건만 표시합니다. 원본 파일 내용은 서버에 보관되지 않습니다. 전체 텍스트 검색 결과는 기존 100,000건 상한을 유지합니다. Connect 원격 로그 정렬은 현재 조회한 제한된 버퍼 범위에 적용되며 서버 전체 파일 정렬과 구분됩니다.

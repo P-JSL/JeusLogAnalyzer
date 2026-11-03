@@ -8,9 +8,9 @@ import (
 )
 func TestNativeUpdateVersionOrdering(t *testing.T){
  table:=[]struct{tag string;updated bool}{
-  {"v1.0.5",true},{"v1.1.0",true},{"v2.0.0",true},
-  {"v1.0.4",false},{"v1.0.3",false},{"v1.0.2",false},{"1.0.1",false},
-  {"v1.0.5-rc1",false},{"not-a-version",false},
+  {"v1.0.6",true},{"v1.1.0",true},{"v2.0.0",true},
+  {"v1.0.5",false},{"v1.0.4",false},{"v1.0.3",false},{"v1.0.2",false},{"1.0.1",false},
+  {"v1.0.6-rc1",false},{"not-a-version",false},
  }
  for _,x:=range table{if newerVersion(x.tag)!=x.updated{t.Errorf("%s: expected %t",x.tag,x.updated)}}
 }
