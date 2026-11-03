@@ -217,6 +217,22 @@ async fn index(State(app):State<App>,Query(q):Query<HashMap<String,String>>)->Re
  if f.seek(SeekFrom::Start(start*24)).is_err()||f.read_exact(&mut bytes).is_err(){return err(StatusCode::CONFLICT,"invalid index")}
  ([(header::CONTENT_TYPE,"application/octet-stream")],bytes).into_response()
 }
+// Binary original-event IDs for the selected transient filter (8-byte little endian).
+// No message text is materialized on the server.
+async fn filter_indices(State(app):State<App>,Query(q):Query<HashMap<String,String>>)->Response{
+ let id=query_id(&q);let meta=match load(&app,&id){Ok(m)=>m,Err(e)=>return e};
+ let fid=q.get("filterId").map(String::as_str).unwrap_or("");
+ if fid.is_empty()||fid=="all"{return err(StatusCode::BAD_REQUEST,"filtered index required")}
+ let (total,mut file)=match resolved_filter(&app,&id,fid,meta.counts.all){Ok(v)=>v,Err(e)=>return e};
+ let Some(ref mut file)=file else{return err(StatusCode::BAD_REQUEST,"filtered index required")};
+ let Some(start)=q.get("start").and_then(|x|x.parse::<u64>().ok())else{return err(StatusCode::BAD_REQUEST,"invalid range")};
+ let Some(count)=q.get("count").and_then(|x|x.parse::<u64>().ok())else{return err(StatusCode::BAD_REQUEST,"invalid range")};
+ if count==0||count>50000||start>=total{return err(StatusCode::BAD_REQUEST,"invalid range")}
+ let count=count.min(total-start);
+ let mut bytes=vec![0u8;count as usize*8];
+ if file.seek(SeekFrom::Start(start*8)).is_err()||file.read_exact(&mut bytes).is_err(){return err(StatusCode::CONFLICT,"filter index damaged")}
+ ([(header::CONTENT_TYPE,"application/octet-stream")],bytes).into_response()
+}
 #[derive(Deserialize)]struct IDs{id:String,indices:Vec<u64>}
 async fn page_ids(State(app):State<App>,Json(q):Json<IDs>)->Response{
  if q.indices.len()>1000{return err(StatusCode::BAD_REQUEST,"too many indices")}
@@ -237,6 +253,7 @@ pub async fn serve(listener:TcpListener,app:App)->Result<(),String>{
  .route("/api/filter",post(filter))
  .route("/api/page",get(page))
  .route("/api/index",get(index))
+ .route("/api/filter-indices",get(filter_indices))
  .route("/api/page-by-ids",post(page_ids))
  .route("/api/remote-tail",post(remote::remote_tail))
  .route("/api/remote-trace",post(remote::remote_trace))
