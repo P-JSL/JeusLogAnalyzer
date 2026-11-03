@@ -10,6 +10,8 @@ const diagnostics=fs.readFileSync(path.join(root,'web/diagnostics.js'),'utf8');
 const remoteUI=fs.readFileSync(path.join(root,'web/remote-sftp.js'),'utf8');
 const remoteProfilesUI=fs.readFileSync(path.join(root,'web/remote-profiles.js'),'utf8');
 const updaterUI=fs.readFileSync(path.join(root,'web/updater.js'),'utf8');
+const localLiveUI=fs.readFileSync(path.join(root,'web/local-live.js'),'utf8');
+const workspaceUI=fs.readFileSync(path.join(root,'web/workspace.js'),'utf8');
 const delay=t=>new Promise(r=>setTimeout(r,t));
 const captureDocs=process.env.JEUS_LENS_DOC_SCREENSHOTS==='1';
 async function saveDocsScreenshot(filename,positionSelector){
@@ -56,13 +58,22 @@ const pages=await until(async()=>{const r=await fetch(`http://127.0.0.1:${port}/
 ws=new WebSocket(pages[0].webSocketDebuggerUrl);await new Promise(r=>ws.addEventListener('open',r,{once:true}));ws.addEventListener('message',e=>{const m=JSON.parse(e.data);if(pending.has(m.id)){const q=pending.get(m.id);pending.delete(m.id);m.error?q.reject(Error(JSON.stringify(m.error))):q.resolve(m.result);}});await call('Runtime.enable');await call('Page.enable');
 await js(`document.open();document.write(${JSON.stringify(html)});document.close();`);
 await js(`(()=>{let s=document.createElement('style');s.textContent=${JSON.stringify(css)};document.head.append(s);})()`);
-await js(parser);await js(diagnostics);await js(mock);await js(app);await js(remoteProfilesUI);await js(remoteUI);await js(updaterUI);
+await js(parser);await js(diagnostics);await js(mock);await js(app);await js(remoteProfilesUI);await js(remoteUI);await js(updaterUI);await js(localLiveUI);await js(workspaceUI);
 if(captureDocs)await call('Emulation.setDeviceMetricsOverride',{width:1480,height:1024,deviceScaleFactor:1,mobile:false});
 await saveDocsScreenshot('01-file-import.png','.heading');
 const lines=['[2026.10.23 09:00:00][0] [m-1] [APP-3333] SQL error ORA-00904 invalid column','[2026.10.23 09:00:01][2] [m-1] [APP-3334] request complete'];
 await js(`(()=>{const txt=${JSON.stringify(lines.join('\n'))};const a=txt.split('\\n');let p=0;window.mockRows=a.map((s,i)=>{const n=new TextEncoder().encode(s).length;const row={index:i,offset:p,length:n,line:i+1,endLine:i+1,category:i===0?1:0,level:i===0?1:3,sqlType:i===0?'SQL 문법·객체':'기타 SQL'};p+=n+1;return row;});let blob=new File([txt],'sample.log',{type:'text/plain'});const dt=new DataTransfer();dt.items.add(blob);document.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt}));return true;})()`);
 await until(()=>js(`!document.querySelector('#results').classList.contains('hidden')&&document.querySelectorAll('#logRows tr').length===2`));
 await saveDocsScreenshot('02-analysis-summary.png','.stat-grid');
+await js(`document.querySelector('#navConnect').click()`);
+assert.equal(await js(`document.querySelector('.content').classList.contains('remote-mode')`),true);
+assert.equal(await js(`document.querySelector('#remoteWorkspace').contains(document.querySelector('.remote-panel:not(.updater-panel)'))`),true);
+await js(`document.querySelector('#navLocal').click()`);
+assert.equal(await js(`document.querySelector('.content').classList.contains('remote-mode')`),false);
+await js(`document.querySelector('[data-log-sort="time"]').click()`);
+assert.equal(await js(`document.querySelector('[data-log-sort="time"]').getAttribute('aria-sort')`),'ascending');
+await js(`document.querySelector('[data-log-sort="time"]').click()`);
+assert.equal(await js(`document.querySelector('[data-log-sort="time"]').getAttribute('aria-sort')`),'descending');
 assert.equal(await js(`document.querySelector('#countAll').textContent`),'2');assert.equal(await js(`document.querySelector('#sqlCount').textContent`),'1');
 assert.equal(await js(`document.querySelectorAll('#hotspotList .hotspot-row').length`),1);
 assert.equal(await js(`document.querySelectorAll('#errorSurgeList .surge-row').length`),1);
@@ -157,7 +168,14 @@ assert.equal(await js(`document.querySelector('#remoteTargetList').options.lengt
 // End generalized remote preview and ephemeral session tests.
 
 if(captureDocs)await js(`(()=>{document.querySelector('#remoteHost').value='';document.querySelector('#remoteUser').value='';document.querySelector('#remotePass').value='';document.querySelector('#remoteFingerprint').value='';document.querySelector('#remotePath').value='';document.querySelector('#remoteOutput').textContent='';document.querySelector('#remoteStatus').textContent='서버 호스트키를 확인하고 읽기 전용 계정으로 접속합니다.';})()`);
+await js(`document.querySelector('#navConnect').click()`);
+assert.equal(await js(`document.querySelector('#remoteWorkspace').classList.contains('hidden')`),false);
+await js(`document.querySelector('#remoteGatewayProduct').value='dbsafer';document.querySelector('#remoteGatewayProduct').dispatchEvent(new Event('change'))`);
+assert.match(await js(`document.querySelector('#remoteGatewayHint').textContent`),/SFTP/);
+await js(`document.querySelector('[data-remote-sort="time"]').click()`);
+assert.equal(await js(`document.querySelector('[data-remote-sort="time"]').getAttribute('aria-sort')`),'ascending');
 await saveDocsScreenshot('04-remote-sftp.png','.remote-panel');
+await js(`document.querySelector('#navLocal').click()`);
 await until(()=>js(`document.querySelector('#updateApply').disabled===false`));
 assert.match(await js(`document.querySelector('#updateStatus').textContent`),/1\.0\.4/);
 await js(`document.querySelector('#updateApply').click()`);
