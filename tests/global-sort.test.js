@@ -52,7 +52,7 @@ function setup(){
  function page(p,asc=true){
   const request=events.length+1;context.onmessage({data:{type:'page',page:p,asc,request}});
   const result=events.find(e=>e.type==='page'&&e.request===request);
-  assert.ok(result);return result.indices;
+  assert.ok(result);return Array.from(result.indices);
  }
  return {ready,page,events,fixtureData};
 }
