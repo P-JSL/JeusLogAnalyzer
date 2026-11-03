@@ -120,3 +120,30 @@ button.issue-item:hover,button.issue-item:focus-visible{background:#263954;borde
 .remote-log-insights label{display:flex;align-items:center;gap:8px}
 .remote-log-insights select{min-width:140px}
 @media(max-width:640px){.remote-service-bar label,.remote-target-toolbar label{flex-basis:100%}.remote-log-insights label{width:100%}}
+
+
+/* Two independent workspaces: preserve the existing local analyzer DOM and IDs. */
+.sidebar .nav-entry{width:100%;border:0;text-align:left;background:transparent;font:inherit;cursor:pointer}
+.sidebar .nav-entry.active{background:#233354;color:#b8c9ff}
+.sidebar .nav-entry:not(.active):hover{background:#1c293e;color:#d0dcf0}
+.content #remoteWorkspace{display:none}
+.content.remote-mode #remoteWorkspace{display:block}
+.content.remote-mode>:not(#remoteWorkspace){display:none!important}
+#remoteWorkspace>.heading{margin-bottom:20px}
+#remoteWorkspace>.remote-panel{margin-bottom:22px}
+.gateway-settings{padding:11px 14px;background:#111c2b;border:1px solid #2d4060;border-radius:8px;margin-top:14px}
+.gateway-settings .remote-service-bar{margin:0 0 8px}
+.gateway-settings select{width:100%;background:#0e1725;color:#d7e2f1;border:1px solid #374761;border-radius:6px;padding:9px}
+.gateway-settings p{margin:6px 0}
+.remote-analytics,.live-panel{margin-bottom:22px}
+.remote-event-note{margin:0 23px 16px}
+.sort-head{display:inline-flex;gap:5px;align-items:center;color:inherit;background:transparent;border:0;font-size:inherit;font-weight:inherit;letter-spacing:inherit;padding:1px 0;cursor:pointer;text-align:inherit}
+.sort-head:hover,.sort-head:focus-visible{color:#b5cbff;text-decoration:underline}
+.sort-head[aria-sort="ascending"],.sort-head[aria-sort="descending"]{color:#b8ceff}
+#remoteWorkspace .table-wrap,.live-panel .table-wrap{max-height:460px;overflow:auto}
+.live-panel .logs-head{gap:14px;flex-wrap:wrap}
+.live-panel #watchStatus{max-width:460px;overflow-wrap:anywhere}
+.live-panel .table-wrap{margin-bottom:12px}
+.remote-analytics .logs-head{gap:12px;flex-wrap:wrap}
+.remote-analytics select{background:#0f1723;color:#dce5f3;border:1px solid #344562;border-radius:6px;padding:7px}
+@media(max-width:850px){.sidebar .nav-entry:not(.active),.sidebar .nav-entry.active{font-size:0}.sidebar .nav-symbol{font-size:20px}.sidebar .nav-entry{justify-content:center}}
