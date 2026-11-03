@@ -100,12 +100,37 @@ def check_one(name,blob,encoding,go,rust):
             page=http(url,f"/api/page?id={id}&filterId={fid['filterId']}&page=1")
             assert page["total"]==fid["total"]
             assert all(row["index"]<n for row in page["rows"])
+        # All event IDs are sorted before pagination: no first-100 shortcut.
+        expected=sorted(range(n),key=lambda i: (min(max(raw[i*24+20],1),3),i))
+        order=http(url,"/api/sort",method="POST",
+                   data=json.dumps({"id":id,"filterId":"all","by":"level"}).encode())
+        assert order["total"]==n
+        ascend=http(url,f"/api/page?id={id}&filterId={order['filterId']}&page=1")
+        descend=http(url,f"/api/page?id={id}&filterId={order['filterId']}&page=1&reverse=1")
+        assert [row["index"] for row in ascend["rows"]]==expected[:100],(name,"ascending",ascend["rows"][:3])
+        assert [row["index"] for row in descend["rows"]]==expected[::-1][:100],(name,"descending",descend["rows"][:3])
+        final=http(url,f"/api/page?id={id}&filterId={order['filterId']}&page={ascend['pages']}")
+        assert [row["index"] for row in final["rows"]]==expected[(ascend["pages"]-1)*100:]
+        assert ascend["total"]==n
+        # Filtered indices must use original event IDs, and preserve all matches.
+        errors=http(url,"/api/filter",method="POST",
+                    data=json.dumps({"id":id,"group":"error","query":""}).encode())
+        selected=[i for i in range(n) if raw[i*24+20]==1]
+        assert errors["total"]==len(selected)
+        if selected:
+            subset=http(url,f"/api/filter-indices?id={id}&filterId={errors['filterId']}&start=0&count={len(selected)}",as_json=False)
+            assert [int.from_bytes(subset[i:i+8],"little") for i in range(0,len(subset),8)]==selected
+        ordered_errors=http(url,"/api/sort",method="POST",
+                            data=json.dumps({"id":id,"filterId":errors["filterId"],"by":"level"}).encode())
+        assert ordered_errors["total"]==len(selected)
+        errors_page=http(url,f"/api/page?id={id}&filterId={ordered_errors['filterId']}&page=1&reverse=1")
+        assert [row["index"] for row in errors_page["rows"]]==selected[::-1][:100]
         indices=[0,n-1] if n>1 else [0]
         rows=http(url,"/api/page-by-ids",method="POST",data=json.dumps({"id":id,"indices":indices}).encode())
         assert [v["index"] for v in rows["rows"]]==indices
         verified=http(url,"/api/verify?id="+id,method="POST",data=blob,as_json=False)
         assert json.loads(verified)["sourceHash"]==meta["sourceHash"]
-        entries.append((meta,raw,allpage))
+        entries.append((meta,raw,allpage,ascend,descend))
     g,r=entries
     keys=["stats","lines","sqlTop","sqlTypes","top","hourly","issues","hotspots","hotspotLimited","errorSurges","issueVersion"]
     for k in keys:
@@ -116,6 +141,9 @@ def check_one(name,blob,encoding,go,rust):
         raise AssertionError(f"{name} incompatible 24-byte index, offset {idx}, Go {g[1][idx:idx+32]!r}, Rust {r[1][idx:idx+32]!r}")
     if g[2]["rows"]!=r[2]["rows"]:
         raise AssertionError(f"{name} incompatible page rows")
+    for i in (3,4):
+        if g[i]["rows"]!=r[i]["rows"]:
+            raise AssertionError(f"{name} incompatible global sort order (direction {i})")
     print("RUST_GO_PARITY_PASS", name, "events",g[0]["stats"]["all"],"bytes",len(blob),flush=True)
 
 def main():

@@ -38,7 +38,17 @@ window.fetch=async function(input,opts={}){
   if(route==='/api/import'){window.mockImported=true;window.mockSummary.size=opts.body.size;return message(window.mockSummary)}
   if(route==='/api/verify')return message(window.mockSummary);
   if(route==='/api/filter'){const req=JSON.parse(opts.body);window.mockGroup=req.group;const arr=window.mockRows.filter(x=>req.group==='all'||(req.group==='sql'&&x.category===1)||(req.group==='sql:1'&&x.category===1&&x.sqlType==='SQL 문법·객체')||(req.group==='issue:0123456789abcdef'&&x.index===0)||(req.group==='error'&&x.level===1)||(req.group==='info'&&x.level===3)||(req.group==='warning'&&x.level===2)||(req.group==='otherError'&&x.level===1&&x.category===0));window.mockMatches=arr;return message({filterId:'f1',total:arr.length})}
-  if(route==='/api/page'){const arr=window.mockMatches||window.mockRows;return message({page:1,pages:1,total:arr.length,rows:arr})}
+  if(route==='/api/sort'){
+    const req=JSON.parse(opts.body);if(req.by!=='level')throw Error('unexpected sort type');
+    window.mockSorted=[...(window.mockMatches||window.mockRows)].sort((a,b)=>a.level-b.level||a.index-b.index);
+    return message({filterId:'sorted1',total:window.mockSorted.length});
+  }
+  if(route==='/api/page'){
+    const base=u.searchParams.get('filterId')==='sorted1'?window.mockSorted:(window.mockMatches||window.mockRows);
+    const arr=u.searchParams.get('reverse')==='1'?[...base].reverse():base;
+    const page=Math.max(1,Math.min(Number(u.searchParams.get('page'))||1,Math.max(1,Math.ceil(arr.length/100))));
+    return message({page,pages:Math.max(1,Math.ceil(arr.length/100)),total:arr.length,rows:arr.slice((page-1)*100,page*100)});
+  }
   if(route==='/api/page-by-ids'){const req=JSON.parse(opts.body);return message({rows:req.indices.map(i=>window.mockRows[i])})}
   if(route==='/api/delete'){window.mockImported=false;return message({deleted:true})}
   if(route==='/api/status')return message({stage:'complete',indexed:window.mockSummary.size,size:window.mockSummary.size});
@@ -70,10 +80,13 @@ assert.equal(await js(`document.querySelector('.content').classList.contains('re
 assert.equal(await js(`document.querySelector('#remoteWorkspace').contains(document.querySelector('.remote-panel:not(.updater-panel)'))`),true);
 await js(`document.querySelector('#navLocal').click()`);
 assert.equal(await js(`document.querySelector('.content').classList.contains('remote-mode')`),false);
-await js(`document.querySelector('[data-log-sort="time"]').click()`);
-assert.equal(await js(`document.querySelector('[data-log-sort="time"]').getAttribute('aria-sort')`),'ascending');
-await js(`document.querySelector('[data-log-sort="time"]').click()`);
-assert.equal(await js(`document.querySelector('[data-log-sort="time"]').getAttribute('aria-sort')`),'descending');
+await js(`document.querySelector('[data-log-sort="level"]').click()`);
+await until(()=>js(`document.querySelector('[data-log-sort="level"]').getAttribute('aria-sort')==='ascending'&&sortIndexId==='sorted1'`));
+assert.equal(await js(`document.querySelector('#logRows tr:first-child td:last-child').textContent`),'1');
+await js(`document.querySelector('[data-log-sort="level"]').click()`);
+await until(()=>js(`document.querySelector('[data-log-sort="level"]').getAttribute('aria-sort')==='descending'&&document.querySelector('#logRows tr:first-child td:last-child').textContent==='2'`));
+await js(`document.querySelector('[data-log-sort="line"]').click()`);
+await until(()=>js(`document.querySelector('#logRows tr:first-child td:last-child').textContent==='1'`));
 assert.equal(await js(`document.querySelector('#countAll').textContent`),'2');assert.equal(await js(`document.querySelector('#sqlCount').textContent`),'1');
 assert.equal(await js(`document.querySelectorAll('#hotspotList .hotspot-row').length`),1);
 assert.equal(await js(`document.querySelectorAll('#errorSurgeList .surge-row').length`),1);

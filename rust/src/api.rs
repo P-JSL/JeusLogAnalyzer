@@ -184,12 +184,13 @@ async fn page(State(app):State<App>,Query(q):Query<HashMap<String,String>>)->Res
  let id=query_id(&q);let meta=match load(&app,&id){Ok(m)=>m,Err(e)=>return e};
  let fid=q.get("filterId").map(String::as_str).unwrap_or("all");
  let (total,mut ids)=match resolved_filter(&app,&id,fid,meta.counts.all){Ok(v)=>v,Err(e)=>return e};
- let pages=(total.saturating_add(99)/100).max(1);let page=q.get("page").and_then(|s|s.parse::<u64>().ok()).unwrap_or(1).clamp(1,pages);
+ let reverse=q.get("reverse").is_some_and(|v|v=="1");
+  let pages=(total.saturating_add(99)/100).max(1);let page=q.get("page").and_then(|s|s.parse::<u64>().ok()).unwrap_or(1).clamp(1,pages);
  let mut idx=match records_file(&app,&id){Ok(f)=>f,Err(e)=>return e};
  let start=(page-1)*100;
  let count=((page*100).min(total)-start) as usize;
  let mut rows=Vec::with_capacity(count);
- if ids.is_none(){
+ if ids.is_none()&&!reverse{
   // Unfiltered pages contain contiguous 24-byte records: one seek/read
   // instead of up to 100 filesystem syscalls and 100 small reads.
   let mut block=vec![0u8;count*24];
@@ -202,7 +203,8 @@ async fn page(State(app):State<App>,Query(q):Query<HashMap<String,String>>)->Res
   }
  }else{
   for i in start..start+count as u64{
-   match filter_row(&mut idx,&mut ids,i){Ok(v)=>rows.push(v),Err(e)=>return e}
+   let ordered=if reverse{total-1-i}else{i};
+    match filter_row(&mut idx,&mut ids,ordered){Ok(v)=>rows.push(v),Err(e)=>return e}
   }
  }
  Json(json!({"page":page,"pages":pages,"total":total,"rows":rows})).into_response()
@@ -215,6 +217,85 @@ async fn index(State(app):State<App>,Query(q):Query<HashMap<String,String>>)->Re
  let count=count.min(meta.counts.all-start);let mut bytes=vec![0;count as usize*24];
  let mut f=match records_file(&app,&id){Ok(f)=>f,Err(e)=>return e};
  if f.seek(SeekFrom::Start(start*24)).is_err()||f.read_exact(&mut bytes).is_err(){return err(StatusCode::CONFLICT,"invalid index")}
+ ([(header::CONTENT_TYPE,"application/octet-stream")],bytes).into_response()
+}
+#[derive(Deserialize)]
+#[serde(rename_all="camelCase")]
+struct SortReq{id:String,#[serde(default)]filter_id:String,by:String}
+// Three stable severity buckets preserve source order, using bounded memory.
+async fn sort_indices(State(app):State<App>,Json(q):Json<SortReq>)->Response{
+ if q.by!="level"{return err(StatusCode::BAD_REQUEST,"invalid sort key")}
+ let meta=match load(&app,&q.id){Ok(m)=>m,Err(e)=>return e};
+ let fid=if q.filter_id.is_empty(){"all".to_owned()}else{q.filter_id.clone()};
+ let (total,ids)=match resolved_filter(&app,&q.id,&fid,meta.counts.all){Ok(v)=>v,Err(e)=>return e};
+ let task=tokio::task::spawn_blocking(move||->Result<(String,u64),String>{
+  let token=token();let folder=app.root.join(&q.id);
+  let tmp:[PathBuf;3]=std::array::from_fn(|i|folder.join(format!("filter-stage-{token}-{i}.tmp")));
+  let output=folder.join(format!("filter-{token}.tmp"));
+  let result=(||->Result<(),String>{
+   let mut stages=Vec::<BufWriter<File>>::with_capacity(3);
+   for file in &tmp{
+    let f=std::fs::OpenOptions::new().create_new(true).write(true).read(true).open(file).map_err(|_|"sort workspace unavailable")?;
+    stages.push(BufWriter::with_capacity(256*1024,f));
+   }
+   let index=File::open(folder.join("index.bin")).map_err(|_|"index unavailable")?;
+   let mut source=BufReader::with_capacity(1024*1024,index);
+   let mut ids=ids.map(|f|BufReader::with_capacity(256*1024,f));
+   let mut row=[0u8;24];let mut original=[0u8;8];
+   for i in 0..total{
+    let n=if let Some(ref mut filter)=ids{
+     filter.read_exact(&mut original).map_err(|_|"filtered index damaged")?;
+     let n=u64::from_le_bytes(original);
+     if n>=meta.counts.all{return Err("filtered index damaged".into())}
+     let offset=n.checked_mul(24).ok_or("invalid record offset")?;
+     source.seek(SeekFrom::Start(offset)).map_err(|_|"index seek failed")?;
+     source.read_exact(&mut row).map_err(|_|"index damaged")?;
+     n
+    }else{
+     source.read_exact(&mut row).map_err(|_|"index damaged")?;
+     i
+    };
+    let bucket=match row[20]{1=>0,2=>1,_=>2};
+    stages[bucket].write_all(&n.to_le_bytes()).map_err(|_|"sort write failed")?;
+   }
+   for writer in &mut stages{writer.flush().map_err(|_|"sort flush failed")?}
+   drop(stages);
+   let output_file=std::fs::OpenOptions::new().create_new(true).write(true).open(&output).map_err(|_|"sort index unavailable")?;
+   let mut writer=BufWriter::with_capacity(1024*1024,output_file);
+   for file in &tmp{
+    let mut reader=BufReader::with_capacity(1024*1024,File::open(file).map_err(|_|"sort bucket unavailable")?);
+    std::io::copy(&mut reader,&mut writer).map_err(|_|"sort merge failed")?;
+   }
+   writer.flush().map_err(|_|"sort index flush failed")?;
+   Ok(())
+  })();
+  for file in &tmp{let _=fs::remove_file(file);}
+  if result.is_err(){let _=fs::remove_file(&output);}
+  result?;
+  let mut filters=app.filters.lock().map_err(|_|"sort lock unavailable")?;
+  filters.insert(token.clone(),Filter{session:q.id,path:output,total});
+  Ok((token,total))
+ }).await;
+ match task{
+  Ok(Ok((fid,total)))=>Json(json!({"filterId":fid,"total":total})).into_response(),
+  Ok(Err(message))=>err(StatusCode::CONFLICT,&message),
+  Err(_)=>err(StatusCode::INTERNAL_SERVER_ERROR,"sort task failed")
+ }
+}
+// Binary original-event IDs for the selected transient filter (8-byte little endian).
+// No message text is materialized on the server.
+async fn filter_indices(State(app):State<App>,Query(q):Query<HashMap<String,String>>)->Response{
+ let id=query_id(&q);let meta=match load(&app,&id){Ok(m)=>m,Err(e)=>return e};
+ let fid=q.get("filterId").map(String::as_str).unwrap_or("");
+ if fid.is_empty()||fid=="all"{return err(StatusCode::BAD_REQUEST,"filtered index required")}
+ let (total,mut file)=match resolved_filter(&app,&id,fid,meta.counts.all){Ok(v)=>v,Err(e)=>return e};
+ let Some(ref mut file)=file else{return err(StatusCode::BAD_REQUEST,"filtered index required")};
+ let Some(start)=q.get("start").and_then(|x|x.parse::<u64>().ok())else{return err(StatusCode::BAD_REQUEST,"invalid range")};
+ let Some(count)=q.get("count").and_then(|x|x.parse::<u64>().ok())else{return err(StatusCode::BAD_REQUEST,"invalid range")};
+ if count==0||count>50000||start>=total{return err(StatusCode::BAD_REQUEST,"invalid range")}
+ let count=count.min(total-start);
+ let mut bytes=vec![0u8;count as usize*8];
+ if file.seek(SeekFrom::Start(start*8)).is_err()||file.read_exact(&mut bytes).is_err(){return err(StatusCode::CONFLICT,"filter index damaged")}
  ([(header::CONTENT_TYPE,"application/octet-stream")],bytes).into_response()
 }
 #[derive(Deserialize)]struct IDs{id:String,indices:Vec<u64>}
@@ -237,6 +318,8 @@ pub async fn serve(listener:TcpListener,app:App)->Result<(),String>{
  .route("/api/filter",post(filter))
  .route("/api/page",get(page))
  .route("/api/index",get(index))
+ .route("/api/filter-indices",get(filter_indices))
+  .route("/api/sort",post(sort_indices))
  .route("/api/page-by-ids",post(page_ids))
  .route("/api/remote-tail",post(remote::remote_tail))
  .route("/api/remote-trace",post(remote::remote_trace))

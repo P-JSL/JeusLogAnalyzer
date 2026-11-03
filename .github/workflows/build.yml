@@ -41,9 +41,10 @@ jobs:
           node --check web/remote-profiles.js
           node --check web/local-live.js
           node --check web/workspace.js
+          node --check web/global-sort-worker.js
           node --check web/updater.js
       - name: JavaScript parser and metadata search tests
-        run: node --test tests/parser.test.js tests/search-worker.test.js tests/diagnostics.test.js
+        run: node --test tests/parser.test.js tests/search-worker.test.js tests/global-sort.test.js tests/diagnostics.test.js
       - name: Build backend and exercise HTTP API
         run: |
           go build -trimpath -o jeus-lens .
