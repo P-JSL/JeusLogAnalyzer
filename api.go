@@ -595,6 +595,7 @@ func (s *engine) page(w http.ResponseWriter, r *http.Request) {
 		defer filterFile.Close()
 	}
 	page, _ := strconv.ParseInt(r.URL.Query().Get("page"), 10, 64)
+	reverse := r.URL.Query().Get("reverse") == "1"
 	maxPages := (total + pageSize - 1) / pageSize
 	if maxPages == 0 {
 		maxPages = 1
@@ -613,7 +614,9 @@ func (s *engine) page(w http.ResponseWriter, r *http.Request) {
 	defer idx.Close()
 	rows := make([]map[string]any, 0, pageSize)
 	for i := (page - 1) * pageSize; i < page*pageSize && i < total; i++ {
-		rec, originalIndex, e := filterRecord(idx, filterFile, i)
+		orderedIndex:=i
+        if reverse{orderedIndex=total-1-i}
+        rec, originalIndex, e := filterRecord(idx, filterFile, orderedIndex)
 		if e != nil {
 			apiError(w, "invalid index", 500)
 			return
@@ -624,6 +627,77 @@ func (s *engine) page(w http.ResponseWriter, r *http.Request) {
 }
 // filterIndices returns only original event IDs from the transient filter index.
 // Source log bytes and messages never enter the backend sort pipeline.
+// sortFilter builds a compact, per-session ordering index using only the
+// existing 24-byte descriptors. Counting into three sequential disk buckets
+// makes level sorting O(n) with bounded RAM, even for millions of events.
+// Source logs are neither read nor persisted by this endpoint.
+func (s *engine) sortFilter(w http.ResponseWriter, r *http.Request) {
+ if r.Method!=http.MethodPost {apiError(w,"POST only",405);return}
+ var req struct{ID string `json:"id"`; FilterID string `json:"filterId"`; By string `json:"by"`}
+ if json.NewDecoder(io.LimitReader(r.Body,4096)).Decode(&req)!=nil || !validID(req.ID) || req.By!="level" {
+  apiError(w,"invalid sort request",400);return
+ }
+ meta,e:=s.load(req.ID);if e!=nil{apiError(w,"archive not found",404);return}
+ if req.FilterID==""{req.FilterID="all"}
+ total,filtered,e:=s.resolveFilter(req.ID,req.FilterID,meta)
+ if e!=nil{apiError(w,e.Error(),400);return}
+ if filtered!=nil{defer filtered.Close()}
+ idx,e:=os.Open(filepath.Join(s.folder(req.ID),"index.bin"))
+ if e!=nil{apiError(w,"index unavailable",500);return}
+ defer idx.Close()
+ token:=createToken()
+ dir:=s.folder(req.ID)
+ paths:=[]string{filepath.Join(dir,"filter-stage-"+token+"-0.tmp"),filepath.Join(dir,"filter-stage-"+token+"-1.tmp"),filepath.Join(dir,"filter-stage-"+token+"-2.tmp")}
+ resultPath:=filepath.Join(dir,"filter-"+token+".tmp")
+ keep:=false
+ defer func(){for _,p:=range paths{_ = os.Remove(p)};if !keep{_ = os.Remove(resultPath)}}()
+ var buckets [3]*os.File
+ var writers [3]*bufio.Writer
+ for i,p:=range paths{
+  file,err:=os.OpenFile(p,os.O_CREATE|os.O_EXCL|os.O_RDWR,0600)
+  if err!=nil{for j:=0;j<i;j++{buckets[j].Close()};apiError(w,"sort workspace unavailable",500);return}
+  buckets[i]=file;writers[i]=bufio.NewWriterSize(file,256*1024)
+ }
+ closeBuckets:=func(){for _,f:=range buckets{if f!=nil{_ = f.Close()}}}
+ defer closeBuckets()
+ idxReader:=bufio.NewReaderSize(idx,1024*1024)
+ var filterReader *bufio.Reader
+ if filtered!=nil{filterReader=bufio.NewReaderSize(filtered,256*1024)}
+ var b [24]byte
+ var numberBytes [8]byte
+ for i:=int64(0);i<total;i++{
+  original:=i
+  if filterReader!=nil{
+   if _,err:=io.ReadFull(filterReader,numberBytes[:]);err!=nil{apiError(w,"filtered index damaged",500);return}
+   original=int64(binary.LittleEndian.Uint64(numberBytes[:]))
+   if original<0||original>=meta.Counts.All{apiError(w,"filtered index damaged",500);return}
+   if _,err:=idx.ReadAt(b[:],original*indexBytes);err!=nil{apiError(w,"index damaged",500);return}
+  }else{
+   if _,err:=io.ReadFull(idxReader,b[:]);err!=nil{apiError(w,"index damaged",500);return}
+  }
+  level:=int(b[20])-1
+  if level<0||level>2{level=2}
+  binary.LittleEndian.PutUint64(numberBytes[:],uint64(original))
+  if _,err:=writers[level].Write(numberBytes[:]);err!=nil{apiError(w,"sort write failed",500);return}
+  if i&16383==0&&r.Context().Err()!=nil{return}
+ }
+ for _,writer:=range writers{if writer.Flush()!=nil{apiError(w,"sort flush failed",500);return}}
+ out,e:=os.OpenFile(resultPath,os.O_CREATE|os.O_EXCL|os.O_WRONLY,0600)
+ if e!=nil{apiError(w,"sort index unavailable",500);return}
+ for _,bucket:=range buckets{
+  if _,e=bucket.Seek(0,io.SeekStart);e!=nil{break}
+  _,e=io.CopyBuffer(out,bucket,make([]byte,1024*1024))
+  if e!=nil{break}
+ }
+ if closeErr:=out.Close();e==nil{e=closeErr}
+ if e!=nil{apiError(w,"sort index creation failed",500);return}
+ s.mu.Lock()
+ s.filters[token]=filterIndex{Session:req.ID,Path:resultPath,Total:total}
+ s.mu.Unlock()
+ keep=true
+ jsonReply(w,map[string]any{"filterId":token,"total":total})
+}
+
 func (s *engine) filterIndices(w http.ResponseWriter, r *http.Request) {
  if r.Method != http.MethodGet { apiError(w,"GET only",http.StatusMethodNotAllowed);return }
  id := r.URL.Query().Get("id")
@@ -751,6 +825,7 @@ func (s *engine) register(mux *http.ServeMux, host string) {
 	mux.HandleFunc("/api/page", secured(s.page, false))
 	mux.HandleFunc("/api/index", secured(s.indexChunk, false))
 	mux.HandleFunc("/api/filter-indices", secured(s.filterIndices, false))
+	mux.HandleFunc("/api/sort", secured(s.sortFilter, true))
 	mux.HandleFunc("/api/page-by-ids", secured(s.pageByIDs, true))
 	mux.HandleFunc("/api/remote-tail", secured(remoteTail, true))
  mux.HandleFunc("/api/remote-trace", secured(remoteTrace, true))
