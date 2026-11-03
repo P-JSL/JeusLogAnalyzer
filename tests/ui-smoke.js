@@ -185,5 +185,13 @@ await call('Emulation.setDeviceMetricsOverride',{width:1480,height:1050,deviceSc
 const snap=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});fs.writeFileSync(path.join(root,'preview.png'),Buffer.from(snap.data,'base64'));
 const rebindState=await js(`(async()=>{ await rebind(new File(['different'],'wrong.log'),window.mockSummary); return {staleFile:currentFile!==null,staleSummary:summary!==null,visible:!document.querySelector('#results').classList.contains('hidden'),warning:document.querySelector('#notice').textContent.includes('크기가')};})()`);
 assert.deepEqual(rebindState,{staleFile:false,staleSummary:false,visible:false,warning:true});
+ // Chromium File System Access mock: user-selected handle, appended bytes only.
+ await js(`(()=>{window.liveText=${JSON.stringify(lines.join('\\n'))};window.liveModified=10;window.showOpenFilePicker=async()=>[{getFile:async()=>new File([window.liveText],'watch.log',{type:'text/plain',lastModified:window.liveModified})}];document.querySelector('#watchFileButton').click()})()`);
+ await until(()=>js(`document.querySelector('#watchStatus').textContent.includes('감시 중 · 2초마다')`));
+ await js(`window.liveText+='\\n[2026.10.23 09:00:02][0] watched failure\\n[2026.10.23 09:00:03][2] next event\\n';window.liveModified=11`);
+ await until(()=>js(`document.querySelector('#watchEventCount').textContent.includes('1건')`),12000);
+ assert.match(await js(`document.querySelector('#watchEventRows').textContent`),/watched failure/);
+ await js(`document.querySelector('#watchStop').click()`);
+
 console.log('CHROMIUM_UI_DROP_ISSUE_SQL_FILTER_HOTSPOT_SURGE_JUMP_DETAIL_REBIND_PASS');
 }main().catch(e=>{console.error(e);process.exitCode=1}).finally(async()=>{try{ws?.close()}catch{}chrome?.kill('SIGKILL');await delay(150)});
