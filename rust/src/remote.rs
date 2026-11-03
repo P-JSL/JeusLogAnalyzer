@@ -57,7 +57,7 @@ pub async fn remote_tail(Json(q):Json<RemoteReq>)->Response{
   let size=meta.len();let reset=q.from_offset.is_some_and(|offset|offset>size);let start=if reset{size.saturating_sub(q.max_bytes)}else{q.from_offset.unwrap_or_else(||size.saturating_sub(q.max_bytes))};let count=(size-start).min(q.max_bytes);
   let mut file=sftp.open(q.path.clone()).await.map_err(|_|"원격 로그 읽기 거부")?;
   file.seek(SeekFrom::Start(start)).await.map_err(|_|"원격 로그 위치 이동 실패")?;
-  let mut data=Vec::with_capacity((size-start)as usize);file.take(count).read_to_end(&mut data).await.map_err(|_|"원격 로그 읽기 실패")?;
+  let mut data=Vec::with_capacity(count as usize);file.take(count).read_to_end(&mut data).await.map_err(|_|"원격 로그 읽기 실패")?;
   Ok::<_,&str>(json!({"size":size,"offset":start,"data":STANDARD.encode(&data),"partial":start>0&&q.from_offset.is_none(),"reset":reset}))
  }).await;
  match res{Ok(Ok(v))=>Json(v).into_response(),Ok(Err(e))=>api_error(StatusCode::BAD_GATEWAY,e),Err(_)=>api_error(StatusCode::GATEWAY_TIMEOUT,"SFTP 20초 제한 초과")}
