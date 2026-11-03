@@ -18,6 +18,7 @@ on:
       - 'remote_sftp_test.go'
       - '.github/workflows/release-v1.0.3.yml'
       - '.github/workflows/release-v1.0.4.yml'
+      - '.github/workflows/release-v1.0.5.yml'
   pull_request:
     paths:
       - 'rust/**'
@@ -33,6 +34,8 @@ on:
       - 'remote_sftp_test.go'
       - '.github/workflows/release-v1.0.2.yml'
       - '.github/workflows/release-v1.0.3.yml'
+      - '.github/workflows/release-v1.0.4.yml'
+      - '.github/workflows/release-v1.0.5.yml'
   workflow_dispatch:
 
 permissions:
