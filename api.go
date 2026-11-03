@@ -622,6 +622,28 @@ func (s *engine) page(w http.ResponseWriter, r *http.Request) {
 	}
 	jsonReply(w, map[string]any{"page": page, "pages": maxPages, "total": total, "rows": rows})
 }
+// filterIndices returns only original event IDs from the transient filter index.
+// Source log bytes and messages never enter the backend sort pipeline.
+func (s *engine) filterIndices(w http.ResponseWriter, r *http.Request) {
+ if r.Method != http.MethodGet { apiError(w,"GET only",http.StatusMethodNotAllowed);return }
+ id := r.URL.Query().Get("id")
+ meta, err := s.load(id)
+ if err!=nil {apiError(w,"archive not found",404);return}
+ fid := r.URL.Query().Get("filterId")
+ if fid=="" || fid=="all" {apiError(w,"filtered index required",400);return}
+ total, file, err := s.resolveFilter(id,fid,meta)
+ if err!=nil {apiError(w,err.Error(),400);return}
+ if file==nil {apiError(w,"filtered index required",400);return}
+ defer file.Close()
+ start,e1:=strconv.ParseInt(r.URL.Query().Get("start"),10,64)
+ count,e2:=strconv.ParseInt(r.URL.Query().Get("count"),10,64)
+ if e1!=nil||e2!=nil||start<0||start>=total||count<1||count>50000 {apiError(w,"invalid range",400);return}
+ if count>total-start {count=total-start}
+ w.Header().Set("Content-Type","application/octet-stream")
+ w.Header().Set("Cache-Control","no-store")
+ w.Header().Set("X-Content-Type-Options","nosniff")
+ _,_=io.Copy(w,io.NewSectionReader(file,start*8,count*8))
+}
 func csvSafe(s string) string {
 	trim := strings.TrimLeft(s, " \t\r\n")
 	if len(trim) > 0 && strings.ContainsRune("=+-@", rune(trim[0])) {
@@ -728,6 +750,7 @@ func (s *engine) register(mux *http.ServeMux, host string) {
 	mux.HandleFunc("/api/filter", secured(s.filter, true))
 	mux.HandleFunc("/api/page", secured(s.page, false))
 	mux.HandleFunc("/api/index", secured(s.indexChunk, false))
+	mux.HandleFunc("/api/filter-indices", secured(s.filterIndices, false))
 	mux.HandleFunc("/api/page-by-ids", secured(s.pageByIDs, true))
 	mux.HandleFunc("/api/remote-tail", secured(remoteTail, true))
  mux.HandleFunc("/api/remote-trace", secured(remoteTrace, true))
