@@ -186,3 +186,26 @@ node --test tests/global-sort.test.js tests/search-worker.test.js tests/parser.t
 ```
 
 별도 성능 비교는 `tests/rust_perf_compare.py`의 입력 인자 규약을 읽고 고정된 baseline/optimized Rust 실행 파일 경로로 수행합니다. 사용하지 않는 옵션을 임의로 만들지 않습니다. **판정 지표:** import MB/s, Go/Rust Peak RSS, global sort p50/p95·heap, search decode ms/byte, 30페이지 조회 ms, 필터 반복 비용. **즉시 원복:** 원본 로그 보관/전송이 늘어남, SQL 분류·라인·offset·원본 SHA 검증이 달라짐, 원격 읽기 전용/호스트키 검사 우회, 필터 ID 충돌.
+
+
+## 8.8 추가 보완 과제 — 요청 경합·원본 재검증·원격 운영 계약 (2026-11-11)
+
+기존 IMP-J01~J05는 스트리밍 파싱·검색·정렬 처리량을 다룹니다. 추가로 대용량 분석 중 사용자 조작의 **최신 요청 보존**과 **원본 로그 신원 재검증**, **원격 읽기 전용 계약**을 실무 테스트 항목으로 편입합니다.
+
+### IMP-J06 · 정렬·검색 조건 급변 시 최신 작업만 유효하도록 회귀 시험 (P1 UI 안정성)
+
+- **확인 근거:** [web/app.js L148-L201](https://github.com/P-JSL/JeusLogAnalyzer/blob/d57e9570026e39f556c6b0709fb2048363960228/web/app.js#L148-L201)은 정렬 변경 시 기존 worker terminate, sortEpoch 대조, pending 요청 정리를 수행합니다. [web/global-sort-worker.js L104-L108](https://github.com/P-JSL/JeusLogAnalyzer/blob/d57e9570026e39f556c6b0709fb2048363960228/web/global-sort-worker.js#L104-L108)의 Worker 자체는 비동기이므로 UI의 세대 보호를 그대로 유지해야 합니다. **현 코드에 경합 결함이 확인되었다는 뜻은 아닙니다.**
+- **개선 절차:** 실제 10만/100만 이벤트 fixture에서 전체정렬 시작 → 필터 변경 → 검색 → 정렬 방향 연속 변경 → 원본 재선택/삭제 순서로 자동 UI 테스트를 확장합니다. 구 worker의 진행·완료·페이지 응답이 이후 화면에 반영되지 않는지, 화면의 정렬 아이콘·총 건수·검색 결과가 같은 세대인지 검증합니다.
+- **합격/원복:** 최신 사용자 요청 외의 결과 표시는 0건, 취소 후 미완료 Promise·Worker 누수 없음, 전체 100행 페이징 규칙 유지. Worker 재사용 최적화로 epoch/terminate 가드를 없애지 않습니다.
+
+### IMP-J07 · 저장된 메타데이터와 원본 로그 재연결의 진단 절차·테스트 (P1 운영)
+
+- **확인 근거:** [api.go L169-L171, L310-L335](https://github.com/P-JSL/JeusLogAnalyzer/blob/d57e9570026e39f556c6b0709fb2048363960228/api.go#L310-L335)는 원본 로그 전체를 보관하지 않고, 재선택 시 원본 크기와 SHA-256을 다시 확인합니다. [tests/rust_parity.py L83-L146](https://github.com/P-JSL/JeusLogAnalyzer/blob/d57e9570026e39f556c6b0709fb2048363960228/tests/rust_parity.py#L83-L146)은 Go/Rust API와 24바이트 인덱스·정렬 결과 비교를 지원합니다.
+- **개선 절차:** 재시작 전·후 같은 로그 재선택, 내용 변경·인코딩 변경·파일 크기 동일하지만 본문 변경·원본 분실 케이스를 분리한 read-only 테스트를 작성합니다. 원본 SHA가 다르면 이전 인덱스를 끼워 맞추지 않고 재분석 필요를 안내해야 합니다. 운영 절차에 인덱스 경로와 원본 로그를 별도 보관해야 하는 이유를 명시합니다.
+- **합격/원복:** 재연결 실패가 원본 파일 보관/업로드의 확대나 임의 원본 복구로 이어져서는 안 됩니다. 24바이트 레코드와 이벤트 offset/라인 정보 및 API 반환 의미가 Go/Rust 양쪽에서 같아야 합니다.
+
+### IMP-J08 · 로컬/원격 로그 처리의 성능과 SFTP 신뢰 경계를 따로 측정 (P2)
+
+- **확인 근거:** [.github/workflows/rust.yml L68-L106](https://github.com/P-JSL/JeusLogAnalyzer/blob/d57e9570026e39f556c6b0709fb2048363960228/.github/workflows/rust.yml#L68-L106)은 Go/Rust parity, 1 GiB 스트리밍, 로컬 SSH 서버 SFTP 읽기 전용 통합을 시험합니다. [.github/workflows/rust-performance.yml L34-L40](https://github.com/P-JSL/JeusLogAnalyzer/blob/d57e9570026e39f556c6b0709fb2048363960228/.github/workflows/rust-performance.yml#L34-L40)은 PR 기준 커밋에 대한 별도 성능 비교를 수행합니다.
+- **개선 절차:** 전체 로컬 인덱스 import MB/s와 원격 SFTP 읽기 throughput/재연결/호스트키 검사 시간, 갱신 폴링/증분 처리량을 따로 측정합니다. 네트워크 왕복 지연은 파서 속도로 오인하지 않습니다. 특정 호스트 인증 실패/연결 끊김/권한 거부를 빈 로그 성공으로 표시하지 않고 명시적 실패 상태로 남깁니다.
+- **합격/원복:** 기본 신뢰 호스트키 검증, 조회 전용 원격 파일 접근, 로컬 원본 비보관/메타데이터 보관 정책 유지. 자동 reconnect 추가 시 비밀번호·키를 평문 로그에 기록하지 않고 재시도 상한을 검증합니다.
