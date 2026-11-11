@@ -239,3 +239,58 @@ node --test tests/global-sort.test.js tests/search-worker.test.js tests/parser.t
 ### 재검토 방법과 수행 범위
 
 **1차 100회**는 기존 코드/벤치마크 기반 후보·명령·향상률 주장·복잡도 경계를 다른 입력 크기·작업자 수·병목 구성 조건으로 반복 검산한 **정적·수치 검토**입니다. **2차 100회**는 1차 문헌을 반영해 Amdahl, Roofline, Little 및 동일 성능 단위 기준을 서로 다른 모형 파라미터로 교차 검산한 **학술·수학적 정합성 검토**입니다. 이는 각 문서에 별도로 시행한 100+100 반복 라운드입니다. **200번의 독립적인 전 코드 정독, 실기 벤치마크 200회, 논문 전체 실험 재현을 의미하지 않습니다.** 실제 추가 개선율은 코드 수정 전후의 재현 가능한 성능 시험 없이는 확정할 수 없습니다.
+
+## 8.10 성능·속도 모델 1,000회 + 논문·수학 검산 1,000회 실행 기록 (2026-11-12)
+
+**정확한 실행 횟수:** 2026-11-12(KST), 로컬 Python 3.13.5에서 결정적 시드 합성 입력으로 실행한 **1차 검토 라운드 1,000회 + 2차 학술·수학 검토 라운드 1,000회 = 저장소별 2,000회**입니다. 각 1회에는 서로 다른 **5개 검산 항목**을 모두 실행했습니다. 따라서 **1차 5,000건 + 2차 5,000건 = 저장소당 10,000건**, 6개 저장소 총 **12,000라운드·60,000건, 실패 0건**입니다. 1,000개 개선 과제 목록이 아닙니다.
+
+**검증의 한계:** 1,000회는 독립 소프트웨어 실행/실제 장비 벤치마크 1,000회가 아닌 **파라미터화된 정적·수학·합성 데이터 자동 검산**입니다. CPU 프로파일러 실행, 원 논문의 대규모 실험 재현, 전 프로젝트 소스를 1,000번 읽어내는 인력 코드 리뷰는 진행하지 않았습니다. 코드 4개는 GitHub에서 실제 텍스트와 Git blob SHA를 별도 검증했습니다. 속도 향상 후보의 실증에는 실제 프로그램 변경 전후의 벤치마크가 별도로 필요합니다.
+
+**재현 증거(분석 산출물, 저장소에 커밋하지 않음):** `performance_review_1000x2_2026-11-12.py` SHA-256 `6e272f565e2bb0741487baf11c19a7b02d1df3158a70926819eb3aeb6c5dbaa8`, `performance_review_1000x2_results_2026-11-12.json` SHA-256 `1bc85836fca3c8c74c2855d81d12dd4e6412732dc1de49484b9a63803afaf09d`. JSON에는 각 항목의 **1,000개 실실행 사례 시드·입출력 요약의 검산 지문**과 첫/마지막 사례가 포함됩니다.
+
+**1차 검산 지문:** `a3d96c94700645e9727f87e08677c61f3b72dec947ccd0d09edc505e27ff02c7`  
+**2차 검산 지문:** `78a37806cc6a00530e8f65cf23f84db581d52985cb37d8fb5a84f994cc6cfbd1`  
+(각 항목에 해당하는 1,000개 사례 JSON Lines SHA-256 다섯 개를 **항목명 사전순**으로 `|` 연결해 SHA-256 계산한 값입니다.)
+
+### 2차 논문·수학 모델: 각 1,000회 전 항목 실행
+
+| 항목 | 각 라운드에서 수행한 검산 | 통과 |
+|---|---|---|
+| Amdahl 상한 | 전체 시간에서 대상 단계 비율 f와 단독 가속 r을 변화시키며 S=1/(1−f+f/r)의 상한 검산 | **1,000/1,000** |
+| Roofline 상한 | FLOP/s ≤ min(CPU 연산 피크, 산술집약도×메모리 대역폭)의 부하별 상한 | **1,000/1,000** |
+| Little의 법칙 | 안정 상태 λ<μ에서 도착률·체류시간·동시 작업량 L=λW의 일관성 | **1,000/1,000** |
+| 꼬리 지연 | 각 부하의 p50/p95/최대값 구분, 중앙값 최적화를 p95 향상으로 오인 방지 | **1,000/1,000** |
+| 저장소 특화 학술 모델 | 바이트 읽기 하한, 스트리밍 정렬/인덱스/HTTP strong validator별 제약 | **1,000/1,000** |
+
+검토 근거: [Amdahl](https://doi.org/10.1145/1465482.1465560), [Roofline](https://doi.org/10.1145/1498765.1498785), [Little](https://doi.org/10.1287/opre.9.3.383), [The Tail at Scale](https://research.google/pubs/the-tail-at-scale/), [Google Benchmark](https://github.com/google/benchmark/blob/main/docs/user_guide.md). 문헌의 속도 향상 사례와 본 저장소의 성능 실측은 다른 데이터입니다.
+
+### 얼마나 더 빨라질 수 있는가: 검산된 가정의 범위
+
+전체 실행시간에서 최적화 단계 비중을 f, 해당 단계의 추가 단독 가속을 r로 측정해야 전체 가속 `S=1/(1−f+f/r)`이 계산됩니다. 예: f=10%·r=4라면 1.081배(시간 7.5% 절감), f=50%·r=4라면 1.600배(37.5% 절감), f=80%·r=4라면 2.500배(60% 절감). 이는 **임의의 설명용 시나리오**이지 JeusLogAnalyzer의 실측·실현 가능한 목표치를 의미하지 않습니다. hot path의 f가 미측정이므로 **현재 코드 대비 추가 가속 가능한 배수는 산정할 수 없습니다.** 여러 단계의 국소 배수를 단순 곱하거나 과거 측정 결과를 신규 기대치에 더하지 않습니다. 실측은 동일 입력·동일 장비에서 최소 5회, cold/warm, end-to-end 시간 및 단계별 CPU/RSS/I/O와 p50/p95를 구분하고 결과 정합성을 선행 검증해야 합니다.
+
+### 1차 성능·코드 모델 검산: 각 1,000회 전 항목 실행
+
+| 검산 항목 | 개별 라운드의 검산 내용 | 통과 |
+|---|---|---|
+| `index_record_count` | 메타데이터 record당 24 bytes × N의 공간 하한 | **1,000/1,000** |
+| `global_sort_and_paging` | 전체 정렬 후 100행 페이지 슬라이스와 ID tie-break 결과 일치 | **1,000/1,000** |
+| `filter_index_equivalence` | 메타 조건 필터링 결과의 원본 index 순서와 정확성 | **1,000/1,000** |
+| `streaming_line_boundaries` | 임의 chunk 경계가 newline byte-offset을 손상하지 않음 | **1,000/1,000** |
+| `source_rebind_sha256` | 원본 파일 크기가 같아도 본문 1바이트 변경을 SHA-256으로 검출 | **1,000/1,000** |
+
+### GitHub 원본 소스 4개에 대한 SHA·식별자 교차 확인
+
+| 파일 (기준 시점의 커밋 고정) | 실제 Git blob SHA-1 |
+|---|---|
+| [`web/global-sort-worker.js`](https://github.com/P-JSL/JeusLogAnalyzer/blob/dba08045b6af6b3a390cbb9caf40d85d1f3fdd17/web/global-sort-worker.js) | `af32e0897b5aebb005f6ef10d1d2625010971b8a` |
+| [`web/search-worker.js`](https://github.com/P-JSL/JeusLogAnalyzer/blob/dba08045b6af6b3a390cbb9caf40d85d1f3fdd17/web/search-worker.js) | `abdc5cc405b223b93dcb417466d0e6a2ea2eac69` |
+| [`api.go`](https://github.com/P-JSL/JeusLogAnalyzer/blob/dba08045b6af6b3a390cbb9caf40d85d1f3fdd17/api.go) | `a80048a9458973def464ad716315b95f2171f2dd` |
+| [`tests/rust_perf_compare.py`](https://github.com/P-JSL/JeusLogAnalyzer/blob/dba08045b6af6b3a390cbb9caf40d85d1f3fdd17/tests/rust_perf_compare.py) | `922559d5bd65216a6be055506dc236af75ed7153` |
+
+### 남은 속도 최적화 여력의 평가·우선순위
+
+**속도 최적화의 실제 우선순위:** (1) `web/global-sort-worker.js`에서 N개 JS key-object의 heap·GC 비용과 TypedArray 대체 후보를 측정합니다. (2) `web/search-worker.js`에서 24-byte metadata-only filter와 text decode+slice를 구분하고 매우 긴 줄/CP949/UTF-16 경계의 복사 횟수를 프로파일링합니다. (3) Go/Rust 파서 간 1 GiB 입력 및 원본 SHA 동등성은 그대로 유지합니다. **검토상 확정된 사실:** 100만 이벤트의 24-byte index만 24,000,000B ≈22.89MiB이며, Browser key/ID 배열은 추가 메모리가 필요합니다. 비교 기반 전체 정렬은 O(N log N) 비용이 남으며, 원본 로그 1 GiB를 검사하는 데 필요한 streaming 읽기 비용을 0으로 만들 수 없습니다. 현재 CPU/브라우저 기준 추가 전체 속도 개선 배수는 미측정입니다.
+
+관련 근거: [Aggarwal–Vitter 외부 정렬 I/O 복잡도](https://research.ibm.com/publications/the-inputoutput-complexity-of-sorting-and-related-problems). 해당 논문의 외부 정렬 수치를 메모리 상주 JS sort의 실측 개선률로 전이하지 않습니다.
+
+---
