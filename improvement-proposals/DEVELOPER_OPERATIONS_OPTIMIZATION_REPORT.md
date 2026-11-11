@@ -209,3 +209,33 @@ node --test tests/global-sort.test.js tests/search-worker.test.js tests/parser.t
 - **확인 근거:** [.github/workflows/rust.yml L68-L106](https://github.com/P-JSL/JeusLogAnalyzer/blob/d57e9570026e39f556c6b0709fb2048363960228/.github/workflows/rust.yml#L68-L106)은 Go/Rust parity, 1 GiB 스트리밍, 로컬 SSH 서버 SFTP 읽기 전용 통합을 시험합니다. [.github/workflows/rust-performance.yml L34-L40](https://github.com/P-JSL/JeusLogAnalyzer/blob/d57e9570026e39f556c6b0709fb2048363960228/.github/workflows/rust-performance.yml#L34-L40)은 PR 기준 커밋에 대한 별도 성능 비교를 수행합니다.
 - **개선 절차:** 전체 로컬 인덱스 import MB/s와 원격 SFTP 읽기 throughput/재연결/호스트키 검사 시간, 갱신 폴링/증분 처리량을 따로 측정합니다. 네트워크 왕복 지연은 파서 속도로 오인하지 않습니다. 특정 호스트 인증 실패/연결 끊김/권한 거부를 빈 로그 성공으로 표시하지 않고 명시적 실패 상태로 남깁니다.
 - **합격/원복:** 기본 신뢰 호스트키 검증, 조회 전용 원격 파일 접근, 로컬 원본 비보관/메타데이터 보관 정책 유지. 자동 reconnect 추가 시 비밀번호·키를 평문 로그에 기록하지 않고 재시도 상한을 검증합니다.
+
+## 8.9 1GiB 스트리밍·정렬·검색의 추가 속도 개선 여력 — 2단계 반복 검토 (2026-11-11)
+
+### 기존 경량화·시험 범위
+
+[api.go L169-L171, L225-L266](https://github.com/P-JSL/JeusLogAnalyzer/blob/d57e9570026e39f556c6b0709fb2048363960228/api.go#L169-L171)의 스트리밍 인덱스는 **원본 로그를 로컬 서버에 저장하지 않고** 메타데이터를 생성합니다. [tests/rust_large_stream.py](https://github.com/P-JSL/JeusLogAnalyzer/blob/d57e9570026e39f556c6b0709fb2048363960228/tests/rust_large_stream.py)는 1 GiB Go/Rust 인덱스·SHA 일치 시험을 구현합니다. 이것은 1 GiB **처리량이나 실행시간 수치가 아니라 기능·무결성 검증**입니다. [tests/rust_perf_compare.py](https://github.com/P-JSL/JeusLogAnalyzer/blob/d57e9570026e39f556c6b0709fb2048363960228/tests/rust_perf_compare.py)는 기준 커밋과 후보 커밋의 성능을 따로 계측하는 스크립트지만 본 보고서에서 실측 실행하지 않았습니다.
+
+| 우선 | 실제 코드 | 개선 방법 | 상한 |
+|---|---|---|---|
+| 1 | [rust/src/engine.rs](https://github.com/P-JSL/JeusLogAnalyzer/blob/d57e9570026e39f556c6b0709fb2048363960228/rust/src/engine.rs), [engine.go](https://github.com/P-JSL/JeusLogAnalyzer/blob/d57e9570026e39f556c6b0709fb2048363960228/engine.go) | 매우 긴 줄/CP949/UTF-16 import 경로의 allocation·UTF 변환·buffer 크기 계측 후 branch/메모리 복사 수 축소 | 전체 1GiB를 읽는 데 T≥1GiB/R_stream; 변환 최적화로 원본 byte reading 자체는 소거 불가 |
+| 2 | [web/global-sort-worker.js L25-L95](https://github.com/P-JSL/JeusLogAnalyzer/blob/d57e9570026e39f556c6b0709fb2048363960228/web/global-sort-worker.js#L25-L95) | 정렬 key를 JS 객체/문자열로 보관하기보다 키별 TypedArray·ID index로 구성하고 동일 comparator 사용 | 일반 sort O(NlogN); timestamp/정수 key가 bounded라면 특화 정렬 검토 가능. 객체 메모리 절감과 wall-time은 별개 |
+| 3 | [web/search-worker.js](https://github.com/P-JSL/JeusLogAnalyzer/blob/d57e9570026e39f556c6b0709fb2048363960228/web/search-worker.js) | 필터링 순서: 24-byte metadata bit 비교 → 필요할 때 원본 slice·decode; 큰 행의 256KiB 경계와 한국어 검색 유지 | 키워드 없는 단순 메타 필터는 원본 재읽기 감소 가능; 텍스트 검색은 매칭 여부 판단에 필요한 bytes 하한 |
+| 4 | [api.go L407-L495](https://github.com/P-JSL/JeusLogAnalyzer/blob/d57e9570026e39f556c6b0709fb2048363960228/api.go#L407-L495) | 반복 필터는 같은 로그 ID/조건을 위한 bounded index cache 실험, 인덱스 부분 읽기와 page 요청 p95 분리 | 원본 변경/필터 ID 충돌 시 cache invalidate. 캐시 메모리·임시 파일 수명 증가 주의 |
+| 5 | [web/local-live.js](https://github.com/P-JSL/JeusLogAnalyzer/blob/d57e9570026e39f556c6b0709fb2048363960228/web/local-live.js) | 신규 이벤트가 있을 때만 화면 재정렬/갱신; 최근 5,000개 버퍼/200개 표시 계약 보존 | 대기 중 UI CPU 절감; 대용량 최초 import throughput에는 영향 없음 |
+
+**메모리 수학:** 24-byte 메타데이터 레코드가 N개면 index만 최소 **24N bytes**(예: N=1,000,000개면 24,000,000B ≈22.9MiB)이고, 브라우저 정렬 key·검색 ID 배열은 별도 사용합니다. 비용을 줄이기 위해 파일 본문을 임의 폐기하거나 Go/Rust 인덱스 호환성을 바꾸면 동일 기능 유지 실패입니다.
+
+**재현:** 동일 compiled Go/Rust 기준 binary로 python3 tests/rust_perf_compare.py baseline-binary optimized-binary 실행. import MB/s, filter/s, 전역 정렬 p95/heap, 30페이지 조회 시간, 원본 SHA 및 Go/Rust API 결과를 비교합니다. 작업 종료 후 원본 로그 보관량은 증가하지 않아야 합니다. **현행 대비 추가 시간 단축: 미측정**.
+
+### 논문·수학 모델에 따른 추가 개선 상한
+
+**Amdahl:** 전체 기존 시간 중 최적화할 단계 비율 f, 해당 단계 가속 r이면 전체 S=1/(1−f+f/r). 가령 f=0.10/r=4 → S=1.081배(전체 시간 7.5% 단축), f=0.50/r=4 → 1.600배(37.5% 단축), f=0.80/r=4 → 2.500배(60% 단축). **위 수치는 측정 결과도 개선 약속도 아닌 계산 예시**입니다. 실측 f가 없으면 저장소 전체의 추가 가능 배수는 제시할 수 없습니다. 여러 단계 국소 개선 배수를 곱하면 안 됩니다.
+
+**Roofline:** CPU 작업량뿐 아니라 메모리/디스크/네트워크 트래픽이 병목일 수 있습니다. **Little:** 안정된 작업계에서 동시 작업수 L=요청 도착률 λ×평균 체류시간 W이며, 작업자 수의 무조건적인 증가는 RAM·대기열과 p95를 악화시킬 수 있습니다. 최소 5회 동일 입력·동일 장비에서 E2E wall time·단계별 CPU·peak RSS·읽기/쓰기 bytes·처리량·p50/p95를 모두 관측합니다. 벤치마크 기록이 없는 개선률은 **미측정**입니다.
+
+검증된 1차 문헌: [Amdahl (1967)](https://doi.org/10.1145/1465482.1465560), [Roofline (2009)](https://zenodo.org/records/1236156), [Little (1961)](https://doi.org/10.1287/opre.9.3.383), [Dean & Barroso (2013), The Tail at Scale](https://research.google/pubs/the-tail-at-scale/), [Google Benchmark Guide](https://google.github.io/benchmark/user_guide.html). 논문에 기재된 **다른 시스템의 가속 배수**는 이 프로그램에서 실현 가능한 개선치로 옮겨 적지 않습니다.
+
+### 재검토 방법과 수행 범위
+
+**1차 100회**는 기존 코드/벤치마크 기반 후보·명령·향상률 주장·복잡도 경계를 다른 입력 크기·작업자 수·병목 구성 조건으로 반복 검산한 **정적·수치 검토**입니다. **2차 100회**는 1차 문헌을 반영해 Amdahl, Roofline, Little 및 동일 성능 단위 기준을 서로 다른 모형 파라미터로 교차 검산한 **학술·수학적 정합성 검토**입니다. 이는 각 문서에 별도로 시행한 100+100 반복 라운드입니다. **200번의 독립적인 전 코드 정독, 실기 벤치마크 200회, 논문 전체 실험 재현을 의미하지 않습니다.** 실제 추가 개선율은 코드 수정 전후의 재현 가능한 성능 시험 없이는 확정할 수 없습니다.
