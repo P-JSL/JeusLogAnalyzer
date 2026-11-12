@@ -51,6 +51,9 @@ P0는 사용자의 데이터·정합성에 영향을 줄 수 있는 경계 우�
 
 - **확인·수정 파일:** [`engine.go`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/engine.go), [`rust/src/engine.rs`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/rust/src/engine.rs), [`tests/rust_parity.py`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/tests/rust_parity.py)
 - **Codex 실행 지침:** 같은 로그 fixture를 Go/Rust 두 실행 파일에서 분석해 24바이트 index, offset, CP949/UTF-16/CRLF, severity, 시간 정렬, 페이지 100행, 원본 SHA가 같은지 검증합니다. 누락된 실패 사례를 회귀 테스트로 추가하고 구조 변경은 별도 승인합니다.
+- **근거 및 관찰 사실:** `engine.go`는 이벤트 인덱스 포맷을, `rust/src/engine.rs`는 Rust 파서를 구현합니다. `tests/rust_parity.py`가 같은 원본에 대한 두 엔진 출력 비교용 기초입니다.
+- **적용 원리·수식 또는 불변식:** 인덱스 길이 `index_bytes = 24 × event_count`. 동등성은 `bytes(index_go)==bytes(index_rust)` 및 동일 요청에 대한 정규화 JSON 값·페이지 순서 비교로 확인합니다. 인코딩별 byte offset은 문자 인덱스와 다릅니다.
+- **공식 문서·논문 출처:** [Go encoding/binary](https://pkg.go.dev/encoding/binary), [Rust std::io](https://doc.rust-lang.org/std/io/index.html) — 바이너리 레이아웃은 저장소 자체의 24바이트 계약을 우선합니다.
 - **검증:** Go/Rust 테스트와 `tests/rust_parity.py`
 - **완료 기준:** 동일 입력에서 레코드·API/페이지 결과가 일치하고 24바이트 계약이 유지됨
 - **기존 항목 매핑:** IMP-J04, Q-J01, Q-J07
@@ -60,6 +63,9 @@ P0는 사용자의 데이터·정합성에 영향을 줄 수 있는 경계 우�
 
 - **확인·수정 파일:** [`api.go`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/api.go), [`tests/rust_parity.py`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/tests/rust_parity.py)
 - **Codex 실행 지침:** 기존 인덱스 생성 후 원본 파일을 같은 크기로 수정·교체·이동·삭제·재선택해 저장된 SHA와 비교합니다. 다른 원본은 재분석 안내로 종료하고, 원본 파일 자체를 서버에 자동 복사하지 않습니다.
+- **근거 및 관찰 사실:** `api.go`의 로컬 원본 SHA 검증을 사용하는 재연결 경계입니다. 같은 크기 파일 교체는 크기 비교만으로 잡을 수 없으므로 실제 해시가 필요합니다.
+- **적용 원리·수식 또는 불변식:** `can_rebind ⇒ size_now==size_saved ∧ SHA256(now)==SHA256(saved)`; 이 검사는 **원본 신원 검증**이지 SHA의 불변성을 주장하지 않습니다. 해시 불일치 시 저장된 offset으로 다른 파일을 조회하지 않습니다.
+- **공식 문서·논문 출처:** [NIST FIPS 180-4](https://csrc.nist.gov/pubs/fips/180-4/upd1/final) — 크기/경로가 같아도 내용 변화를 감지하는 데 암호학적 다이제스트를 사용합니다.
 - **검증:** `go test ./...` 및 parity fixture
 - **완료 기준:** SHA가 다른 원본을 기존 index에 잘못 연결하지 않음
 - **기존 항목 매핑:** IMP-J07, Q-J02
@@ -69,6 +75,9 @@ P0는 사용자의 데이터·정합성에 영향을 줄 수 있는 경계 우�
 
 - **확인·수정 파일:** [`remote_sftp.go`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/remote_sftp.go), [`rust/src/remote.rs`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/rust/src/remote.rs), [`tests/rust_sftp_smoke.py`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/tests/rust_sftp_smoke.py)
 - **Codex 실행 지침:** 지문 불일치/인증 실패/경로 위반/연결 단절/512KiB 초과 요청을 읽기 전용 로컬 SFTP 서버로 시험합니다. Go와 Rust의 실패 코드를 대조합니다.
+- **근거 및 관찰 사실:** `remote_sftp.go`는 한 번의 미리보기 요청 최대 `512*1024` 바이트를 검사합니다(기준 59·107행). 반면 로컬 원본 1GiB는 `engine.go`의 독립 상한입니다.
+- **적용 원리·수식 또는 불변식:** 원격 조회 성공 조건 `0 ≤ requested_bytes ≤ 524288 ∧ host_key_fingerprint_verified ∧ read_only_path_authorized`. 로컬 `maxLogBytes = 1<<30`과 미리보기 상한을 합쳐 계산하지 않습니다.
+- **공식 문서·논문 출처:** [SSH 연결 프로토콜 RFC 4253](https://www.rfc-editor.org/rfc/rfc4253.html), [OpenSSH SFTP 설계](https://www.openssh.com/manual.html) — 서버 지문 검증·원격 접근 정책은 프로젝트 신뢰 규칙에 따릅니다.
 - **검증:** `go test ./...`, CI SFTP 통합 시험
 - **완료 기준:** 원격 쓰기·삭제·명령 실행 0건, 지문 실패 거부, 조회 크기 상한 준수
 - **기존 항목 매핑:** IMP-J08, Q-J03, Q-J04
@@ -78,6 +87,9 @@ P0는 사용자의 데이터·정합성에 영향을 줄 수 있는 경계 우�
 
 - **확인·수정 파일:** [`main.go`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/main.go), [`api.go`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/api.go), [`web/remote-profiles.js`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/web/remote-profiles.js)
 - **Codex 실행 지침:** 바인딩 주소·Origin/CORS·원격 프로필에 자격증명 저장 여부·오류 진단 문자열을 확인합니다. 외부 사이트에서 로컬 API 호출/민감 로그 유출의 재현 테스트를 먼저 만들고 필요한 최소 수정만 적용합니다.
+- **근거 및 관찰 사실:** `main.go`와 `api.go`의 loopback 바인딩·Origin/CSRF 정책, `web/remote-profiles.js`의 인증정보 보관을 감사하는 **추가 검증**입니다. 현재 취약점이라고 확정할 수 없습니다.
+- **적용 원리·수식 또는 불변식:** 접근 허용 조건 `authorize(request) ⇒ 신뢰된 출처 ∧ 허용된 API 경로 ∧ 올바른 권한`. 로그에 `secret`·토큰·비밀번호의 원문 출력 횟수는 `0`이어야 합니다.
+- **공식 문서·논문 출처:** [OWASP CSRF 예방](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html), [OWASP Logging](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html) — localhost 서비스도 외부 웹사이트 요청을 고려합니다.
 - **검증:** `go test ./...`
 - **완료 기준:** 접근 허용 경계와 오류 정보 노출이 명시되고 기존 사용자 흐름 유지
 - **기존 항목 매핑:** Q-J05, Q-J06
@@ -87,6 +99,9 @@ P0는 사용자의 데이터·정합성에 영향을 줄 수 있는 경계 우�
 
 - **확인·수정 파일:** [`web/global-sort-worker.js`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/web/global-sort-worker.js), [`tests/global-sort.test.js`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/tests/global-sort.test.js)
 - **Codex 실행 지침:** 100k/1m 이벤트의 JS heap·GC·정렬 p95를 계측합니다. `TypedArray` 또는 숫자 정렬의 프로토타입을 기존 object comparator 결과와 비교하고 내림차순·동점·마지막 페이지까지 검증합니다.
+- **근거 및 관찰 사실:** `web/global-sort-worker.js`의 정렬 비용은 JS 객체·문자열 key 처리량으로 나타날 수 있으나 GC가 병목인지 측정하지 않았습니다. `tests/global-sort.test.js`의 결과 계약을 유지합니다.
+- **적용 원리·수식 또는 불변식:** 비교 정렬은 일반적으로 `O(N log N)`; 정수 키 조건이 충족되는 경우 radix 후보는 `O(wN)`(자리수 w)이나 원본 오름·내림·동점 순서와 메모리 `M_peak`를 함께 비교합니다.
+- **공식 문서·논문 출처:** [TypedArray MDN](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/TypedArray), [Array.sort MDN](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/sort) — 키 변환은 원래 비교 의미를 보존해야 합니다.
 - **검증:** `node --test tests/global-sort.test.js`
 - **완료 기준:** 정렬 ID·페이지 동일, 실제 peak heap/시간 개선
 - **기존 항목 매핑:** IMP-J01
@@ -96,6 +111,9 @@ P0는 사용자의 데이터·정합성에 영향을 줄 수 있는 경계 우�
 
 - **확인·수정 파일:** [`web/search-worker.js`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/web/search-worker.js), [`web/parser.js`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/web/parser.js), [`tests/search-worker.test.js`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/tests/search-worker.test.js)
 - **Codex 실행 지침:** 메타 필터 후 텍스트가 필요한 항목만 복호화하는 경로를 확인합니다. 대체 문자열 검색 알고리즘은 한글/CP949/UTF16/긴 줄/chunk 경계를 포함한 기존 검색 결과와 완전 비교합니다.
+- **근거 및 관찰 사실:** `web/search-worker.js`는 텍스트 검색, `web/parser.js`는 원문 인코딩 경계를 처리합니다. 검색 속도 변경은 byte offset과 문자 범위의 관계를 확인해야 합니다.
+- **적용 원리·수식 또는 불변식:** 정확성 조건 `match_original(query, decoded_row) == match_candidate(query, decoded_row)`; 전체 텍스트 검색에서 필요한 경우 byte 읽기 하한을 피할 수 없습니다. 메타 필터 결과 수 `k≤N`일 때 필요 text decode를 `N→k`로 제한할 여지는 있습니다.
+- **공식 문서·논문 출처:** [Boyer–Moore 논문](https://doi.org/10.1145/359842.359859), [TextDecoder MDN](https://developer.mozilla.org/en-US/docs/Web/API/TextDecoder) — 변경 전후 한국어·UTF-16 동등성 필수.
 - **검증:** `node --test tests/search-worker.test.js tests/parser.test.js`
 - **완료 기준:** 매칭·하이라이트·순서 불변, 복호화 메모리/시간 측정
 - **기존 항목 매핑:** IMP-J02
@@ -105,6 +123,9 @@ P0는 사용자의 데이터·정합성에 영향을 줄 수 있는 경계 우�
 
 - **확인·수정 파일:** [`api.go`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/api.go), [`web/app.js`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/web/app.js)
 - **Codex 실행 지침:** 동일 조건 반복 조회의 재스캔 비용을 계측합니다. 필터 생성 도중 취소·재시작/원본 소스 변경의 임시 결과가 유효한 결과처럼 선택되지 않게 테스트합니다. bitmap 적용은 실제 밀집도에 따라 판단합니다.
+- **근거 및 관찰 사실:** `api.go`의 저장된 필터/색인 경로에서 반복 조회와 중도 실패 상태를 구분하는 작업입니다. 현재 캐시 결함을 확인한 것은 아닙니다.
+- **적용 원리·수식 또는 불변식:** 캐시 유효 조건 `cache_key == (source_sha, filter_predicate, sort_policy, format_version)`. 취소된 생성 작업은 `valid_index=false`; 비트맵 교집합은 결과 집합 `A∩B`가 원래 순차 필터와 같아야 합니다.
+- **공식 문서·논문 출처:** [Roaring bitmap 논문](https://doi.org/10.1002/spe.2402), [NIST SSDF](https://csrc.nist.gov/pubs/sp/800/218/final) — 비트맵은 모든 데이터 분포에서 이득이라는 보장이 없습니다.
 - **검증:** `go test ./...`
 - **완료 기준:** 중단된 결과 재사용 0건, 기존 필터·정렬 반환 값 동일
 - **기존 항목 매핑:** IMP-J03, Q-J08
@@ -114,6 +135,9 @@ P0는 사용자의 데이터·정합성에 영향을 줄 수 있는 경계 우�
 
 - **확인·수정 파일:** [`web/app.js`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/web/app.js), [`web/local-live.js`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/web/local-live.js), [`tests/ui-smoke.js`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/tests/ui-smoke.js)
 - **Codex 실행 지침:** 정렬→검색→필터→소스 교체와 로컬 파일 rename/truncate/rotation을 순차 실행합니다. 이전 worker 응답과 오래된 파일 행이 최신 화면으로 돌아오지 않는지 확인합니다.
+- **근거 및 관찰 사실:** `web/app.js`는 sort worker 세대 처리, `web/local-live.js`는 실시간 로그 누적 및 새 파일 전환을 담당합니다. 두 동작의 중첩이 테스트 대상입니다.
+- **적용 원리·수식 또는 불변식:** 정렬/검색 반영 불변식 `response.epoch == current_epoch`; 회전된 로그는 `source_identity`가 달라야 하며 `current_rows ⊆ active_file_rows`. 취소된 Promise가 새 화면에 남지 않도록 합니다.
+- **공식 문서·논문 출처:** [Web Workers MDN](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Using_web_workers), [Rust 동기화 원칙](https://doc.rust-lang.org/book/ch16-04-extensible-concurrency-sync-and-send.html) — Rust 원칙은 브라우저 동작의 직접 규범이 아닌 비교 참고입니다.
 - **검증:** `node --test tests/global-sort.test.js tests/search-worker.test.js`
 - **완료 기준:** 최신 요청만 표시, 작업 누수·이전 로그 혼입 없음
 - **기존 항목 매핑:** IMP-J05, IMP-J06, Q-J10
@@ -123,6 +147,9 @@ P0는 사용자의 데이터·정합성에 영향을 줄 수 있는 경계 우�
 
 - **확인·수정 파일:** [`updater.go`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/updater.go), [`rust/src/updater.rs`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/rust/src/updater.rs), [`.github/workflows/rust.yml`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/.github/workflows/rust.yml)
 - **Codex 실행 지침:** 동일 커밋의 Go/Rust EXE·ZIP·SHA256SUMS의 일치와 손상·네트워크 중단 시 이전 실행 파일 보존을 검증합니다. Linux parity와 Windows native 검증 결과를 개별로 보고합니다.
+- **근거 및 관찰 사실:** `updater.go`와 Rust 업데이터의 최신 자산 선택·교체 방식, `.github/workflows/rust.yml`의 플랫폼 검증 경로를 확인한 뒤 변경합니다.
+- **적용 원리·수식 또는 불변식:** 업데이트 게시 조건 `hash(downloaded_artifact) == trusted_release_hash ∧ platform_match ∧ version_policy_ok`. 업데이트 실패는 `current_executable`을 변경하지 않는 것이 목표입니다.
+- **공식 문서·논문 출처:** [SLSA Provenance](https://slsa.dev/spec/v1.2/provenance), [GitHub Releases REST API](https://docs.github.com/en/rest/releases/releases) — 체크섬과 게시자 인증은 별도 근거가 필요합니다.
 - **검증:** `cargo test --locked --all-targets --manifest-path rust/Cargo.toml`
 - **완료 기준:** 출처가 불명확한 파일 교체 거부, 양쪽 배포 검증 근거 존재
 - **기존 항목 매핑:** Q-J09
@@ -132,6 +159,9 @@ P0는 사용자의 데이터·정합성에 영향을 줄 수 있는 경계 우�
 
 - **확인·수정 파일:** [`tests/rust_perf_compare.py`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/tests/rust_perf_compare.py), [`tests/rust_large_stream.py`](https://github.com/P-JSL/JeusLogAnalyzer/blob/346986b8bf411f9364ce4ef40187f2b94d8d3dd7/tests/rust_large_stream.py)
 - **Codex 실행 지침:** 로컬 import MiB/s, 메타 필터·정렬 p95, 원격 네트워크 RTT/SFTP 처리량을 구분해 같은 입력·소스 SHA의 기준선을 만듭니다. 큰 파일 무결성 테스트를 성능 개선 성공으로 기록하지 않습니다.
+- **근거 및 관찰 사실:** `tests/rust_perf_compare.py`는 기준/최적화 바이너리 비교, `tests/rust_large_stream.py`는 대형 원본 무결성 시험입니다. 목적이 달라 동일한 성능 증거로 취급하지 않습니다.
+- **적용 원리·수식 또는 불변식:** 로컬 처리량 `MB/s = 원본 읽기 바이트 / 실제 elapsed 초 / 2²⁰`(정확한 표기는 MiB/s). SFTP 응답시간은 `T ≈ RTT + B/R_network + server_delay`로 별도 계측하며 직렬·병렬 경로 여부에 따라 실측식을 재검토합니다.
+- **공식 문서·논문 출처:** [Google Benchmark 반복 통계](https://google.github.io/benchmark/user_guide.html), [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html) — 무결성 테스트를 속도 테스트 통과로 오해하지 않습니다.
 - **검증:** `python3 tests/rust_perf_compare.py --help`(인자 확인 후 실행)
 - **완료 기준:** 각 단계의 실제 측정값과 회귀 기준이 분리됨
 - **기존 항목 매핑:** IMP-J08
