@@ -294,3 +294,58 @@ node --test tests/global-sort.test.js tests/search-worker.test.js tests/parser.t
 관련 근거: [Aggarwal–Vitter 외부 정렬 I/O 복잡도](https://research.ibm.com/publications/the-inputoutput-complexity-of-sorting-and-related-problems). 해당 논문의 외부 정렬 수치를 메모리 상주 JS sort의 실측 개선률로 전이하지 않습니다.
 
 ---
+
+## 8.11 DIVERSE PERFORMANCE REVIEW — 1,000 feasibility + 1,000 cross-disciplinary evaluations (2026-11-12)
+
+### 1,000 rounds mean **1,000 combinations**, not 1,000 new features
+
+Actual deterministic Python screening performed: **10 existing-code-anchored approaches × 10 workloads × 10 distinct feasibility constraints = 1,000 tuples**, plus **10 approaches × 10 workloads × 10 distinct research lenses = 1,000 tuples**. Every combination is unique within its phase; 2,000 evaluated tuples per repository, 12,000 across all six. A second execution reproduced the summary digest. `run_diverse_1000.py` SHA-256 `caecadb0696142bca8de43e1ae440152015459e8e90e8c418e9909c8a1b82de9`, summary `summary_6repos.json` SHA-256 `23e3ab0a3a456c954dc7f42a0df115dd9ad26fb81b6aa73c4b74850121fd98d0`. Workload axes: short cold, small warm, standard, high count, repeated, long RTT, memory pressure, UI churn, slow disk, 16-worker contention. Constraint axes: exact outputs, new dependencies, portability, memory headroom, tail latency, cold path, cancellation, crash recovery, throughput, additional I/O.
+
+**Validation boundaries:** These are **synthetic design-feasibility calculations and mathematical-relevance checks**, not 2,000 actual executable/CPU benchmarks, 2,000 source diff manual reviews, or 2,000 novel papers read. Status labels are screening outcomes **not verification of implementation or achieved speed**. The rows and hashes can be reproduced with the separately provided evidence ZIP; audit source is not committed to this code repository.
+
+### Ten new viewpoints beyond the older Amdahl / Roofline / Little-only treatment
+
+1. [Parallel work/span and work stealing](https://doi.org/10.1145/324133.324234)
+2. [Cache-oblivious locality](https://www.fftw.org/~athena/abstracts/abstract12.html)
+3. [Amortization of repeated work](https://en.wikipedia.org/wiki/Amortized_analysis)
+4. [Bloom false-positive negative-filter](https://doi.org/10.1145/362686.362692)
+5. [Roaring bitmap intersection](https://doi.org/10.1002/spe.2402)
+6. [Boyer–Moore pattern matching](https://doi.org/10.1145/359842.359859)
+7. [Paired common-random-number experiments](https://doi.org/10.1287/mnsc.41.12.1935)
+8. [Bandwidth-delay product and strong Range](https://www.rfc-editor.org/rfc/rfc9110.html)
+9. [Top-Down microarchitecture bottlenecks](https://doi.org/10.1109/ISPASS.2014.6844459)
+10. [Browser INP interaction latency](https://web.dev/articles/inp)
+
+A lens can be **useful**, **indirect**, or **not-relevant**. Inapplicable ideas are explicitly rejected for an approach: e.g., Roaring is not a proof of benefit for tiny ephemeral filters; Bloom can reject absent keys but positive results require exact verification; CRN affects *experiment variance*, not application throughput; the bandwidth-delay product is only relevant to transport; INP is not a video encoding speed measurement. Additional math conditions: work/span lower bound T_P ≥ max(T₁/P, T∞), precompute amortization only when repeats × saved-query-work > setup, Bloom false positive probability approximately (1−e^(−kn/m))^k under ideal assumptions, and HTTP pipeline BDP = RTT × goodput.
+
+### Review matrix result (not a measured performance success rate)
+
+| Phase | Model classifications (sum 1,000) |
+|---|---|
+| Engineering constraints | prototype-after-profiling 159; conditional-prototype 504; guard-required 46; low-priority 185; measure-first 6; reject-contract-change 100; existing-not-additional 0 |
+| Research relevance | useful 300; indirect 320; not-relevant 380 |
+
+**Engineering evidence SHA-256:** `e705673211e97bda81eac0f6bd1b4856575a8681590f9299b6ce1d5f4c3413a3`. **Theory-relevance evidence SHA-256:** `c58cb44148954c3bad0bc1f3cc435a02a99f0ad0772aba42461960c0e1526230`. Hashes are for each 1,000-row canonical JSON list of method/workload/lens outcomes.
+
+### Different solution approaches: does the code permit a safe experiment?
+
+| ID | Technique | Checked source anchor | Feasibility | Necessary workload | What can invalidate this approach |
+|---|---|---|---|---|---|
+| J-ALT-01 | TypedArray numeric sort representation | [`web/global-sort-worker.js`](https://github.com/P-JSL/JeusLogAnalyzer/blob/333d770de68b160891b9dfbe931358e9037ff416/web/global-sort-worker.js) | **Prototype after profiling** | Many events retained as JS key objects | Tie ID, string and descending sort parity required |
+| J-ALT-02 | Stable radix for numeric keys | [`web/global-sort-worker.js`](https://github.com/P-JSL/JeusLogAnalyzer/blob/333d770de68b160891b9dfbe931358e9037ff416/web/global-sort-worker.js) | **Conditional** | Large N and integer key semantics validated | Cannot silently convert string/timestamp sorting to lossy keys |
+| J-ALT-03 | Compressed bitmap filter postings | [`api.go`](https://github.com/P-JSL/JeusLogAnalyzer/blob/333d770de68b160891b9dfbe931358e9037ff416/api.go) | **Conditional** | Repeated high-selectivity filter intersections | Preserve 24-byte exported metadata and file format |
+| J-ALT-04 | Boyer–Moore/Two-Way string matching | [`web/search-worker.js`](https://github.com/P-JSL/JeusLogAnalyzer/blob/333d770de68b160891b9dfbe931358e9037ff416/web/search-worker.js) | **Prototype after profiling** | Long decoded lines, repeated fixed text queries | UTF8/CP949/UTF16 chunk-boundary behavior must match |
+| J-ALT-05 | Vectorized newline scanning | [`rust/src/engine.rs`](https://github.com/P-JSL/JeusLogAnalyzer/blob/333d770de68b160891b9dfbe931358e9037ff416/rust/src/engine.rs) | **Conditional** | Large input, CPU byte scanning proven dominant | Exact byte offset/CRLF/encoding parity Go vs Rust |
+| J-ALT-06 | Metadata-first lazy content slicing | [`web/search-worker.js`](https://github.com/P-JSL/JeusLogAnalyzer/blob/333d770de68b160891b9dfbe931358e9037ff416/web/search-worker.js) | **Conditional** | Highly selective metadata filter before text query | Full text predicates still read original bytes |
+| J-ALT-07 | Bounded repeated-filter cache | [`api.go`](https://github.com/P-JSL/JeusLogAnalyzer/blob/333d770de68b160891b9dfbe931358e9037ff416/api.go) | **Conditional** | Repeated filter ID and validated immutable source hash | No stale offsets when original file changes |
+| J-ALT-08 | SFTP bounded read-ahead | [`remote_sftp.go`](https://github.com/P-JSL/JeusLogAnalyzer/blob/333d770de68b160891b9dfbe931358e9037ff416/remote_sftp.go) | **Conditional** | High RTT and small sequential read windows | Host-key pinning and read-only operation not changed |
+| J-ALT-09 | Incremental live-view updates | [`web/local-live.js`](https://github.com/P-JSL/JeusLogAnalyzer/blob/333d770de68b160891b9dfbe931358e9037ff416/web/local-live.js) | **Prototype after profiling** | Frequent small append with existing UI capped rows | Limit and sort ordering preserved |
+| J-ALT-10 | Store original source bytes for speed | [`api.go`](https://github.com/P-JSL/JeusLogAnalyzer/blob/333d770de68b160891b9dfbe931358e9037ff416/api.go) | ****Reject** under metadata-only contract** | Would require explicit product/privacy change | Original log persistence contradicts current architecture |
+
+### Recommended order and decision gates
+
+**Ranked experiments:** first sort N=100k/1m using TypedArray vs object keys with identical global order and page 100; then compare bitmap postings against current filter file for dense/sparse intersections; finally benchmark substring search across chunk boundaries and 1GiB UTF variants. **Complexity is not a speed guarantee**: radix can be O(wN) only after safe fixed-width key reduction, and Roaring may use *more* memory for sparse/short-lived filters. 24N bytes metadata (for 1m events, ~22.9MiB) remains an explicit format cost.
+
+Additional original references: [Roaring bitmap evaluation](https://doi.org/10.1002/spe.2402), [Boyer–Moore 1977](https://doi.org/10.1145/359842.359859), [Top-Down CPU counters](https://doi.org/10.1109/ISPASS.2014.6844459).
+
+**Mandatory adoption protocol:** compare baseline and prototype with the exact same input/source hashes, OS, CPU, build flags and dataset, alternating baseline/candidate at least five complete runs each; report cold/warm end-to-end time, p50/p95, bytes read/written, peak RSS/JS heap, and output equivalence. Numerical asymptotic improvements and reference papers do **not** establish achievable speedups before full execution. **No whole-program prospective speedup is quantified** because the cost share of the relevant hot path has not been profiled.
