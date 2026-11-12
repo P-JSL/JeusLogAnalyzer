@@ -2,9 +2,9 @@
 
 **저장소:** [P-JSL/JeusLogAnalyzer](https://github.com/P-JSL/JeusLogAnalyzer)  
 **소스 분석 기준:** `main` / [`d57e9570026e39f556c6b0709fb2048363960228`](https://github.com/P-JSL/JeusLogAnalyzer/commit/d57e9570026e39f556c6b0709fb2048363960228)  
-**보고서 작성일:** 2026-11-11 (KST)  
+**보고서 초판:** 2026-11-11 (KST) · **교차 검증 갱신:** 2026-11-12 (KST)  
 **대상:** 개발자 · 운영자 · 릴리스 담당자  
-**개선 후보:** 5개 (우선순위·수정 위치·구현·검증·원복 기준 포함)  
+**누적 기존 IMP 개선 과제:** 8개 (초판 5개 포함, 별도 비성능 Q 제어/검토 항목 10개)  
 **상태:** 분석·구현 제안만 작성. 실제 소스 최적화·동적 성능 측정·프로그램 배포는 수행하지 않음.  
 > 문서 내 장·절 번호는 원래 6개 저장소 통합 보고서의 번호를 보존한 것입니다. 코드 근거 링크는 작성 시점의 커밋으로 고정했습니다.
 
@@ -349,3 +349,49 @@ A lens can be **useful**, **indirect**, or **not-relevant**. Inapplicable ideas 
 Additional original references: [Roaring bitmap evaluation](https://doi.org/10.1002/spe.2402), [Boyer–Moore 1977](https://doi.org/10.1145/359842.359859), [Top-Down CPU counters](https://doi.org/10.1109/ISPASS.2014.6844459).
 
 **Mandatory adoption protocol:** compare baseline and prototype with the exact same input/source hashes, OS, CPU, build flags and dataset, alternating baseline/candidate at least five complete runs each; report cold/warm end-to-end time, p50/p95, bytes read/written, peak RSS/JS heap, and output equivalence. Numerical asymptotic improvements and reference papers do **not** establish achievable speedups before full execution. **No whole-program prospective speedup is quantified** because the cost share of the relevant hot path has not been profiled.
+
+## 8.12 NON-PERFORMANCE QUALITY / SECURITY / RELIABILITY REVIEW — 1,000 + 1,000 scenario screenings (2026-11-12)
+
+### Method and evidence boundary
+
+On 2026-11-12, a deterministic Python model actually generated **1,000 Phase-I rows** (10 repo-specific controls × 10 failure types × 10 operating environments) and **1,000 Phase-II rows** (10 controls × 10 different assurance methods × 10 quality attributes) for **each repository**. Across six repositories: **12,000 separate screening combinations**. A second script execution reproduced the same summary SHA-256. This **does not** mean 12,000 program runs, 12,000 independent code reviews, 12,000 demonstrated vulnerabilities or 12,000 passing security tests. Synthetic scenario classifications prioritize design/test work only.
+
+Phase I failures: invalid input, corruption, denied permissions, concurrent changes, interrupted operation, stale version, authentication/transport error, untrusted content, platform incompatibility and partial write/restore. Phase II techniques: QuickCheck-style property testing, metamorphic tests, state-machine checks, fault injection, STRIDE, NIST SSDF, OWASP ASVS 5.0, SLSA provenance, WCAG 2.2, and differential engine/output parity. Inapplicable methods are marked **not relevant**, not forcibly applied.
+
+Evidence package, produced separately from GitHub: `review_nonperformance_1000x2.py` SHA-256 `3168cd9f7c938c391ff057280fab9a88fd61b86d42b5fba732d564627d22c5da`; summary `summary_6repos_nonperformance.json` SHA-256 `e823ec751b255943238598c3a4289f67482d3d8019d5b8bb3e443425a157131b`. Each stored JSONL contains 1,000 canonical decision rows. No application code was changed or executed by these document-only commits. 'Existing' describes a targeted code safeguard; it does not certify the wider threat.
+
+Quality references, **not project certifications**: [ISO/IEC 25010:2023](https://www.iso.org/standard/78176.html), [NIST SP 800-218](https://csrc.nist.gov/pubs/sp/800/218/final), [OWASP ASVS 5.0](https://asvs.owasp.org/), [SLSA v1.2](https://slsa.dev/spec/v1.2/provenance), [WCAG 2.2](https://www.w3.org/TR/WCAG22/), [Claessen & Hughes 2000](https://doi.org/10.1145/351240.351266).
+
+### 2,000 evaluated matrix cells, not a defect count
+
+- Phase I: 820 lower-priority, 80 existing-guard exercises, 100 new test proposals. Every category total is **1,000**.
+- Phase II: 54 recommended, 462 context-dependent, 484 not relevant. Every category total is **1,000**. A **not relevant** standard was not applied to an unrelated feature.
+- Screening counts **do not measure completeness, live security, or feature quality**. Repeat appearances of an existing issue across 100 input environments represent **one issue × 100 test situations**, not 100 defects.
+
+| ID | Quality contract | Current source assessment | Checked file | Scenario for a real test | Acceptance gate |
+|---|---|---|---|---|---|
+| Q-J01 | Go/Rust index parity | **existing** | [`tests/rust_parity.py`](https://github.com/P-JSL/JeusLogAnalyzer/blob/d2af7499501c2dc44950b1b861ed61a2f50b3ce5/tests/rust_parity.py) | CP949, UTF16 and mixed severity logs | Exact 24-byte records and API parity |
+| Q-J02 | Reselected source verification | **existing** | [`api.go`](https://github.com/P-JSL/JeusLogAnalyzer/blob/d2af7499501c2dc44950b1b861ed61a2f50b3ce5/api.go) | Same-size changed source log | SHA-256 mismatch rejects previous index/source binding |
+| Q-J03 | SFTP read-only preview boundary | **existing** | [`remote_sftp.go`](https://github.com/P-JSL/JeusLogAnalyzer/blob/d2af7499501c2dc44950b1b861ed61a2f50b3ce5/remote_sftp.go) | Remote path, limit, stat, read-only permission | Single remote preview max 512KiB, no remote command/write |
+| Q-J04 | Host-key trust pin | **existing** | [`rust/src/remote.rs`](https://github.com/P-JSL/JeusLogAnalyzer/blob/d2af7499501c2dc44950b1b861ed61a2f50b3ce5/rust/src/remote.rs) | MITM host key mismatch or untrusted host | Terminate before authentication and show safe error |
+| Q-J05 | Local API trust and loopback binding | **proposal** | [`main.go`](https://github.com/P-JSL/JeusLogAnalyzer/blob/d2af7499501c2dc44950b1b861ed61a2f50b3ce5/main.go) | Untrusted browser origin/remote bind | No dangerous cross-origin control surface |
+| Q-J06 | Sensitive log text disclosures | **proposal** | [`api.go`](https://github.com/P-JSL/JeusLogAnalyzer/blob/d2af7499501c2dc44950b1b861ed61a2f50b3ce5/api.go) | SQL bind tokens, personal identifiers, export | No automatic public upload or secret display in diagnostics |
+| Q-J07 | Encoding/offset equivalence | **proposal** | [`rust/src/engine.rs`](https://github.com/P-JSL/JeusLogAnalyzer/blob/d2af7499501c2dc44950b1b861ed61a2f50b3ce5/rust/src/engine.rs) | Huge line, CRLF, UTF16 surrogate boundary | Go/Rust offsets, sorting, severity results match |
+| Q-J08 | Interrupted filter temp index | **proposal** | [`api.go`](https://github.com/P-JSL/JeusLogAnalyzer/blob/d2af7499501c2dc44950b1b861ed61a2f50b3ce5/api.go) | Cancel midway, restart during filter write | No stale filter path selected or silent partial index |
+| Q-J09 | Release asset provenance | **proposal** | [`updater.go`](https://github.com/P-JSL/JeusLogAnalyzer/blob/d2af7499501c2dc44950b1b861ed61a2f50b3ce5/updater.go) | Forged ZIP or mismatched checksum manifest | Installer selects source-matching, verified artifact |
+| Q-J10 | Live log rotation | **proposal** | [`web/local-live.js`](https://github.com/P-JSL/JeusLogAnalyzer/blob/d2af7499501c2dc44950b1b861ed61a2f50b3ce5/web/local-live.js) | Truncation, rename, append, reconnect | Old rows not merged as if they were current file |
+
+### Contradiction reconciliation — report versus source and related repositories
+
+1. **Scope alignment:** local log import allows **1 byte–1 GiB** (`engine.go` `maxLogBytes=1<<30` and `api.go:189-190`); **remote SFTP** is only a bounded **512KiB read-only preview** (`remote_sftp.go:59`). These are not contradictory file-size limits for one operation.
+2. The metadata-only backend **does store indexes and summaries**, but **does not persist original log bodies**. Browser rendering can still expose log text from the locally selected source, so privacy handling remains relevant.
+3. Existing Go and Rust parity checks include 24-byte index and JSON. This is **not** a blanket certification for all encodings, large lines, crash/rotation and remote transport.
+4. The old '5 proposals' front-matter count is replaced with **8 accumulated IMP-J items**; 10 Q-J controls are distinct quality checks.
+
+### What to implement or verify next
+
+- **P0:** no false-success result, no unauthenticated destructive mutation, no silent corruption, unsafe archive publication or source-index mix-up. Treat confirmed mismatches as open until a source fix passes CI.
+- **P1:** state-machine and fault-injection tests for cancel/restart/concurrency, source hash, update/provenance, permission denial and recovery. Separate existing guards from uncovered edge cases.
+- **P2:** accessibility and support diagnostics, parity, maintainability and release documentation. For Windows and Chrome UI, verify the real interaction, not only DOM presence.
+- Code changes, deployment and real fault-injection tests **have not been performed** in this report-only update. Preserve existing interface, journal and fail-closed contracts before approval.
+
